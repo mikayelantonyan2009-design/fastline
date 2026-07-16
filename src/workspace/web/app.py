@@ -104,6 +104,35 @@ def _analyze(name, body):
     )
 
 
+def _record_start(recorder, req):
+    port = int(req.json.get("port", PORT)) if req.is_json else PORT
+    if not recorder.start(port=port):
+        return jsonify(error="Already recording"), 409
+    return jsonify(recorder.status())
+
+
+def _lap_trace(name, lap):
+    """Per-sample telemetry for one clean lap, for the track view."""
+    p = _safe_csv(name)
+    if p is None:
+        return jsonify(error="No such session"), 404
+    df = f1_analyze.load(p)
+    if df.empty:
+        return jsonify(error="No lap data in this session"), 400
+    g = f1_analyze.get_lap(df, lap)
+    if len(g) < 2:
+        return jsonify(error="Not enough data for that lap"), 400
+    return jsonify(
+        dist=g["lap_distance_m"].round(1).tolist(),
+        speed=g["speed_kmh"].round(1).tolist(),
+        throttle=(g["throttle"] * 100).round(1).tolist(),
+        brake=(g["brake"] * 100).round(1).tolist(),
+        gear=g["gear"].astype(int).tolist(),
+        lap_time_s=round(float(g["lap_time_ms"].max()) / 1000.0, 3),
+        track_len_m=round(float(g["lap_distance_m"].max()), 1),
+    )
+
+
 def create_app():
     app = Flask(__name__)
     templates = Path(__file__).parent / "templates"
@@ -115,10 +144,7 @@ def create_app():
 
     @app.post("/api/record/start")
     def record_start():
-        port = int(request.json.get("port", PORT)) if request.is_json else PORT
-        if not recorder.start(port=port):
-            return jsonify(error="Already recording"), 409
-        return jsonify(recorder.status())
+        return _record_start(recorder, request)
 
     @app.post("/api/record/stop")
     def record_stop():
@@ -143,6 +169,10 @@ def create_app():
     @app.post("/api/sessions/<name>/analyze")
     def analyze(name):
         return _analyze(name, request.json or {})
+
+    @app.get("/api/sessions/<name>/lap/<int:lap>/trace")
+    def lap_trace(name, lap):
+        return _lap_trace(name, lap)
 
     return app
 
