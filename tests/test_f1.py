@@ -26,7 +26,7 @@ def test_record_then_analyze(tmp_path):
     assert rec.start(port=port) is False          # already recording
 
     # feed synthetic laps to the recorder
-    f1_sim.simulate(port=port, laps=3, hz=240, warmup=0.3)
+    f1_sim.simulate(dest=("127.0.0.1", port), laps=3, hz=240, warmup=0.3)
     time.sleep(0.3)                               # let the loop drain
     status = rec.stop()
     assert status["recording"] is False
@@ -59,12 +59,12 @@ def test_session_lock_ignores_other_source(tmp_path):
     # a second, competing session streaming to the same port
     intruder = threading.Thread(
         target=f1_sim.simulate,
-        kwargs={"port": port, "laps": 3, "hz": 120, "warmup": 0.35,
-                "session_uid": 0xDEADBEEF},
+        kwargs={"dest": ("127.0.0.1", port), "laps": 3, "hz": 120,
+                "warmup": 0.35, "session_uid": 0xDEADBEEF},
         daemon=True,
     )
     intruder.start()
-    f1_sim.simulate(port=port, laps=3, hz=240, warmup=0.3)  # the "real" session
+    f1_sim.simulate(dest=("127.0.0.1", port), laps=3, hz=240, warmup=0.3)  # "real"
     intruder.join(timeout=10)
     time.sleep(0.3)
     status = rec.stop()

@@ -37,5 +37,18 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+# pycodestyle (E/W), pyflakes (F), mccabe complexity (C901), and pylint
+# size limits (too-many branches/args/statements) at conventional thresholds.
+select = ["E", "F", "W", "C901", "PLR0912", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 5
+max-branches = 12
+max-statements = 50
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
