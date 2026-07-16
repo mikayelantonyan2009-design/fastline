@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>F1 25 Telemetry</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3;
+    --muted:#8b949e; --red:#e10600; --blue:#3671C6; --orange:#FF8000;
+    --green:#2ea043;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:16px 24px;
+    border-bottom:1px solid var(--border); background:linear-gradient(90deg,#1a0002,transparent); }
+  header .dot { width:14px; height:14px; border-radius:50%; background:var(--red); }
+  header h1 { font-size:18px; margin:0; letter-spacing:.5px; }
+  header small { color:var(--muted); margin-left:auto; }
+  main { max-width:1100px; margin:0 auto; padding:24px; display:grid; gap:20px; }
+  .panel { background:var(--panel); border:1px solid var(--border);
+    border-radius:12px; padding:20px; }
+  .panel h2 { margin:0 0 14px; font-size:14px; text-transform:uppercase;
+    letter-spacing:.8px; color:var(--muted); }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  button { border:0; border-radius:8px; padding:10px 18px; font-weight:600;
+    font-size:14px; cursor:pointer; color:#fff; background:#21262d; transition:.15s; }
+  button:hover:not(:disabled) { filter:brightness(1.2); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:var(--red); }
+  button.stop { background:#6e0000; }
+  button.ghost { background:#21262d; color:var(--text); border:1px solid var(--border); }
+  select, input { background:#0d1117; color:var(--text); border:1px solid var(--border);
+    border-radius:8px; padding:9px 12px; font-size:14px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+    gap:12px; margin-top:16px; }
+  .stat { background:#0d1117; border:1px solid var(--border); border-radius:10px; padding:12px; }
+  .stat .k { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.5px; }
+  .stat .v { font-size:22px; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .rec-badge { display:inline-flex; align-items:center; gap:8px; padding:6px 12px;
+    border-radius:20px; font-size:13px; font-weight:600; background:#21262d; }
+  .rec-badge .pulse { width:10px; height:10px; border-radius:50%; background:var(--muted); }
+  .rec-badge.live .pulse { background:var(--red); animation:pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th,td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--border); font-size:13px; }
+  th { color:var(--muted); font-weight:600; }
+  tr.fast td:first-child::after { content:" ⚡"; }
+  .muted { color:var(--muted); }
+  .chart-wrap { margin-top:16px; text-align:center; }
+  .chart-wrap img { max-width:100%; border-radius:10px; border:1px solid var(--border); background:#fff; }
+  .netdelta { font-size:15px; margin-top:10px; font-weight:600; }
+  .err { color:#ff7b72; font-size:13px; margin-top:8px; }
+  .hint { color:var(--muted); font-size:12.5px; margin-top:8px; }
+  /* ---- color modal ---- */
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.65);
+    display:flex; align-items:center; justify-content:center; z-index:50; }
+  .modal-overlay[hidden] { display:none; }
+  .modal { background:var(--panel); border:1px solid var(--border); border-radius:14px;
+    padding:24px; width:min(440px,92vw); box-shadow:0 24px 70px rgba(0,0,0,.55); }
+  .modal h3 { margin:0 0 8px; font-size:17px; }
+  .modal p { margin:0 0 4px; font-size:13.5px; }
+  .color-rows { display:grid; gap:14px; margin:18px 0 22px; }
+  .color-row { display:flex; align-items:center; justify-content:space-between;
+    background:#0d1117; border:1px solid var(--border); border-radius:10px; padding:12px 16px; }
+  .color-row span { font-weight:600; }
+  input.swatch { -webkit-appearance:none; appearance:none; width:36px; height:36px;
+    border:2px solid var(--border); border-radius:50%; padding:0; cursor:pointer;
+    background:none; }
+  input.swatch::-webkit-color-swatch-wrapper { padding:0; }
+  input.swatch::-webkit-color-swatch { border:none; border-radius:50%; }
+  input.swatch::-moz-color-swatch { border:none; border-radius:50%; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <h1>F1&nbsp;25 TELEMETRY</h1>
+  <small id="hostinfo"></small>
+</header>
+<main>
+
+  <!-- ================= RECORD ================= -->
+  <section class="panel">
+    <h2>Record a session</h2>
+    <div class="row">
+      <button id="startBtn" class="primary">● Start recording</button>
+      <button id="stopBtn" class="stop" disabled>■ Stop</button>
+      <label class="muted">UDP port
+        <input id="portInput" type="number" value="20777" style="width:100px">
+      </label>
+      <span id="recBadge" class="rec-badge"><span class="pulse"></span><span id="recText">Idle</span></span>
+      <button id="demoBtn" class="ghost" title="Send fake telemetry (no PS5 needed)" disabled>▶ Demo feed</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="k">Current lap</div><div class="v" id="stLap">—</div></div>
+      <div class="stat"><div class="k">Last lap</div><div class="v" id="stLast">—</div></div>
+      <div class="stat"><div class="k">Rows logged</div><div class="v" id="stRows">0</div></div>
+      <div class="stat"><div class="k">Elapsed</div><div class="v" id="stElapsed">0s</div></div>
+      <div class="stat"><div class="k">Session file</div><div class="v" id="stFile" style="font-size:13px">—</div></div>
+    </div>
+    <div class="hint">No PS5? Click <b>Start recording</b>, then <b>Demo feed</b> to generate a few synthetic laps, then Stop.</div>
+  </section>
+
+  <!-- ================= ANALYZE ================= -->
+  <section class="panel">
+    <h2>Analyze &amp; compare laps</h2>
+    <div class="row">
+      <label>Session
+        <select id="sessionSel"><option value="">— select —</option></select>
+      </label>
+      <button id="refreshBtn" class="ghost">↻ Refresh</button>
+      <label>Lap A <select id="lapA"></select></label>
+      <label>Lap B <select id="lapB"></select></label>
+      <button id="analyzeBtn" class="primary" disabled>Generate chart</button>
+    </div>
+    <div id="lapTableWrap"></div>
+    <div id="analyzeErr" class="err"></div>
+    <div class="netdelta" id="netDelta"></div>
+    <div class="chart-wrap" id="chartWrap"></div>
+  </section>
+
+  <!-- ================= COLOR MODAL ================= -->
+  <div id="colorModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <div id="colorStep1">
+        <h3>Choose your line colors?</h3>
+        <p class="muted">Pick a custom color for each lap, or use the defaults
+          (blue &amp; orange).</p>
+        <div class="row" style="justify-content:flex-end">
+          <button id="colorNoBtn" class="ghost">No, use defaults</button>
+          <button id="colorYesBtn" class="primary">Yes, choose colors</button>
+        </div>
+      </div>
+      <div id="colorStep2" hidden>
+        <h3>Pick your line colors</h3>
+        <p class="muted">Click a circle to open the color picker.</p>
+        <div class="color-rows" id="colorRows"></div>
+        <div class="row" style="justify-content:flex-end">
+          <button id="colorCancelBtn" class="ghost">Cancel</button>
+          <button id="colorDoneBtn" class="primary">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const fmtMs = ms => { if(!ms) return "—"; const s=ms/1000, m=Math.floor(s/60);
+  return m>0 ? `${m}:${(s-m*60).toFixed(3).padStart(6,'0')}` : `${s.toFixed(3)}s`; };
+
+$("#hostinfo").textContent = location.host;
+
+// ---- recording -------------------------------------------------------
+async function post(url, body){
+  const r = await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body||{})});
+  return {ok:r.ok, data: await r.json().catch(()=>({}))};
+}
+$("#startBtn").onclick = async () => {
+  const port = parseInt($("#portInput").value)||20777;
+  const {ok,data} = await post("/api/record/start",{port});
+  if(!ok){ alert(data.error||"Could not start"); return; }
+};
+$("#stopBtn").onclick = async () => {
+  await post("/api/record/stop");
+  loadSessions();          // a new CSV should now be available
+};
+$("#demoBtn").onclick = async () => {
+  const {ok,data} = await post("/api/record/demo",{laps:3});
+  if(!ok) alert(data.error||"Start recording first");
+};
+
+function renderStatus(s){
+  const live = s.recording;
+  $("#recBadge").classList.toggle("live", live);
+  $("#recText").textContent = live ? (s.message||"Recording…") : (s.message||"Idle");
+  $("#startBtn").disabled = live;
+  $("#stopBtn").disabled = !live;
+  $("#demoBtn").disabled = !live;
+  $("#portInput").disabled = live;
+  $("#stLap").textContent  = s.current_lap || "—";
+  $("#stLast").textContent = fmtMs(s.last_completed_ms);
+  $("#stRows").textContent = s.rows || 0;
+  $("#stElapsed").textContent = (s.elapsed_s||0)+"s";
+  $("#stFile").textContent = s.session_file || "—";
+}
+async function pollStatus(){
+  try { renderStatus(await (await fetch("/api/record/status")).json()); }
+  catch(e){}
+}
+setInterval(pollStatus, 1000); pollStatus();
+
+// ---- sessions & analysis --------------------------------------------
+async function loadSessions(){
+  const list = await (await fetch("/api/sessions")).json();
+  const sel = $("#sessionSel"); const cur = sel.value;
+  sel.innerHTML = '<option value="">— select —</option>' +
+    list.map(s=>`<option value="${s.name}">${s.name}</option>`).join("");
+  if(list.some(s=>s.name===cur)) sel.value = cur;
+}
+$("#refreshBtn").onclick = loadSessions;
+
+$("#sessionSel").onchange = async () => {
+  const name = $("#sessionSel").value;
+  $("#chartWrap").innerHTML=""; $("#netDelta").textContent=""; $("#analyzeErr").textContent="";
+  $("#lapTableWrap").innerHTML=""; $("#lapA").innerHTML=""; $("#lapB").innerHTML="";
+  $("#analyzeBtn").disabled = !name;
+  if(!name) return;
+  const {laps} = await (await fetch(`/api/sessions/${encodeURIComponent(name)}/laps`)).json();
+  if(!laps || !laps.length){ $("#lapTableWrap").innerHTML='<p class="muted">No lap data.</p>'; return; }
+  // lap picker options
+  const opts = laps.map(l=>`<option value="${l.lap}">Lap ${l.lap} — ${l.time_s.toFixed(3)}s${l.complete?"":" (partial)"}</option>`).join("");
+  $("#lapA").innerHTML = opts; $("#lapB").innerHTML = opts;
+  const complete = laps.filter(l=>l.complete);   // laps are sorted fastest-first
+  if(complete.length>=2){ $("#lapA").value=complete[0].lap; $("#lapB").value=complete[1].lap; }
+  else if(laps.length>=2){ $("#lapA").value=laps[0].lap; $("#lapB").value=laps[1].lap; }
+  // summary table
+  $("#lapTableWrap").innerHTML =
+    `<table><thead><tr><th>Lap</th><th>Time</th><th>Samples</th><th>Complete</th></tr></thead><tbody>`
+    + laps.map((l,i)=>`<tr class="${i===0?'fast':''}"><td>${l.lap}</td><td>${l.time_s.toFixed(3)}s</td><td>${l.samples}</td><td>${l.complete?'✓':'—'}</td></tr>`).join("")
+    + `</tbody></table>`;
+};
+
+const DEFAULT_C1 = "#3671C6", DEFAULT_C2 = "#FF8000";   // lap A (blue) / lap B (orange)
+
+async function runAnalyze(colors){
+  const name = $("#sessionSel").value; if(!name) return;
+  const laps = [parseInt($("#lapA").value), parseInt($("#lapB").value)];
+  $("#analyzeErr").textContent=""; $("#netDelta").textContent="";
+  $("#chartWrap").innerHTML='<p class="muted">Rendering…</p>';
+  const body = {laps};
+  if(colors) body.colors = colors;
+  const {ok,data} = await post(`/api/sessions/${encodeURIComponent(name)}/analyze`, body);
+  if(!ok){ $("#chartWrap").innerHTML=""; $("#analyzeErr").textContent=data.error||"Failed"; return; }
+  const sign = data.net_delta>=0?"+":"";
+  $("#netDelta").innerHTML = `Net delta at line: <span style="color:${data.net_delta>=0?'var(--orange)':'var(--green)'}">${sign}${data.net_delta.toFixed(3)}s</span> &nbsp;<span class="muted">(Lap ${data.lap2} vs Lap ${data.lap1})</span>`;
+  $("#chartWrap").innerHTML = `<img src="${data.image}" alt="telemetry overlay">`;
+}
+
+// ---- color-choice modal ----
+const closeModal = () => { $("#colorModal").hidden = true; };
+$("#analyzeBtn").onclick = () => {
+  if(!$("#sessionSel").value) return;
+  $("#colorStep1").hidden = false;
+  $("#colorStep2").hidden = true;
+  $("#colorModal").hidden = false;                 // step 1: ask yes/no
+};
+$("#colorNoBtn").onclick     = () => { closeModal(); runAnalyze(null); };
+$("#colorCancelBtn").onclick = closeModal;
+$("#colorModal").onclick = e => { if(e.target.id === "colorModal") closeModal(); };
+
+$("#colorYesBtn").onclick = () => {
+  const labA = $("#lapA").selectedOptions[0]?.textContent || `Lap ${$("#lapA").value}`;
+  const labB = $("#lapB").selectedOptions[0]?.textContent || `Lap ${$("#lapB").value}`;
+  $("#colorRows").innerHTML =
+    `<div class="color-row"><span>${labA}</span>
+       <input type="color" class="swatch" id="c1" value="${DEFAULT_C1}"></div>
+     <div class="color-row"><span>${labB}</span>
+       <input type="color" class="swatch" id="c2" value="${DEFAULT_C2}"></div>`;
+  $("#colorStep1").hidden = true;
+  $("#colorStep2").hidden = false;                 // step 2: pick colors
+};
+$("#colorDoneBtn").onclick = () => {
+  const colors = {color1: $("#c1").value, color2: $("#c2").value};
+  closeModal();
+  runAnalyze(colors);
+};
+
+loadSessions();
+</script>
+</body>
+</html>

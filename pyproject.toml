@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "A Python project"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "flask>=3.0",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -14,6 +19,10 @@ dev = [
 
 [project.scripts]
 workspace = "workspace.cli:main"
+f1-logger = "workspace.f1_logger:main"
+f1-analyze = "workspace.f1_analyze:main"
+f1-sim = "workspace.f1_sim:main"
+f1-web = "workspace.web.app:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -21,6 +30,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"workspace.web" = ["templates/*.html"]
 
 [tool.ruff]
 line-length = 100

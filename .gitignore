@@ -16,6 +16,10 @@ venv/
 .coverage
 htmlcov/
 
+# Recorded telemetry sessions (data, not code)
+sessions/
+*.csv
+
 # Editor / OS
 .vscode/
 .idea/

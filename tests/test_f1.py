@@ -1,0 +1,89 @@
+"""End-to-end-ish tests that need no PS5: they drive the synthetic UDP emitter
+through the recorder, then analyze the resulting CSV."""
+
+import socket
+import time
+
+import matplotlib
+matplotlib.use("Agg")
+
+from workspace import f1_analyze, f1_sim
+from workspace.recorder import Recorder
+
+
+def _free_udp_port():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def test_record_then_analyze(tmp_path):
+    port = _free_udp_port()
+    rec = Recorder(tmp_path)
+    assert rec.start(port=port) is True
+    assert rec.start(port=port) is False          # already recording
+
+    # feed synthetic laps to the recorder
+    f1_sim.simulate(port=port, laps=3, hz=240, warmup=0.3)
+    time.sleep(0.3)                               # let the loop drain
+    status = rec.stop()
+    assert status["recording"] is False
+    assert status["rows"] > 0
+
+    csvs = list(tmp_path.glob("f1_session_*.csv"))
+    assert len(csvs) == 1
+
+    df = f1_analyze.load(csvs[0])
+    assert not df.empty
+    summary = f1_analyze.lap_summary(df)
+    assert (summary["complete"]).sum() >= 2       # at least two full laps
+
+    lap1, lap2 = f1_analyze.pick_laps(summary)
+    png, info = f1_analyze.render_png(df, lap1, lap2)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"          # valid PNG signature
+    assert "net_delta" in info
+
+
+def test_session_lock_ignores_other_source(tmp_path):
+    """Two sources on the same port (e.g. a real PS5 + the demo) must NOT thrash
+    the recorder into many files — it locks to the first session and ignores the
+    rest, producing a single analyzable CSV."""
+    import threading
+
+    port = _free_udp_port()
+    rec = Recorder(tmp_path)
+    rec.start(port=port)
+
+    # a second, competing session streaming to the same port
+    intruder = threading.Thread(
+        target=f1_sim.simulate,
+        kwargs={"port": port, "laps": 3, "hz": 120, "warmup": 0.35,
+                "session_uid": 0xDEADBEEF},
+        daemon=True,
+    )
+    intruder.start()
+    f1_sim.simulate(port=port, laps=3, hz=240, warmup=0.3)  # the "real" session
+    intruder.join(timeout=10)
+    time.sleep(0.3)
+    status = rec.stop()
+
+    # exactly one file (the bug produced dozens), and it stays analyzable
+    csvs = list(tmp_path.glob("f1_session_*.csv"))
+    assert len(csvs) == 1
+    assert status["ignored"] > 0                  # the other source was dropped
+    df = f1_analyze.load(csvs[0])
+    summary = f1_analyze.lap_summary(df)
+    assert (summary["complete"]).sum() >= 2
+
+
+def test_pick_laps_needs_two_complete():
+    import pandas as pd
+    summary = pd.DataFrame([{"lap": 1, "time_s": 90.0, "complete": True},
+                            {"lap": 2, "time_s": 91.0, "complete": False}])
+    try:
+        f1_analyze.pick_laps(summary)
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
