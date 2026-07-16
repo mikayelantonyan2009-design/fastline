@@ -78,6 +78,30 @@ def test_session_lock_ignores_other_source(tmp_path):
     assert (summary["complete"]).sum() >= 2
 
 
+def test_get_lap_drops_rewind_overlap():
+    """A mid-lap flashback (distance jumps backward < a full lap) must not leave
+    two overlapping drives at the same distance — get_lap keeps forward progress
+    only, so the plotted distance is strictly increasing (no filled band)."""
+    import numpy as np
+    import pandas as pd
+
+    # drive 0..700, flash back to 0, then complete 0..1000
+    dist = list(range(0, 701, 50)) + list(range(0, 1001, 50))
+    n = len(dist)
+    df = pd.DataFrame({
+        "lap": [1] * n,
+        "lap_distance_m": dist,
+        "lap_time_ms": list(range(0, n * 100, 100)),
+        "speed_kmh": [200] * n, "throttle": [1.0] * n, "brake": [0.0] * n,
+        "gear": [7] * n, "rpm": [10000] * n,
+        "session_time": [i * 0.1 for i in range(n)],
+        "frame": list(range(n)), "drs": [0] * n,
+    })
+    d = f1_analyze.get_lap(df, 1)["lap_distance_m"].values
+    assert np.all(np.diff(d) > 0)     # strictly increasing, no overlap/fill
+    assert d.max() == 1000            # keeps the full completed pass
+
+
 def test_pick_laps_needs_two_complete():
     import pandas as pd
     summary = pd.DataFrame([{"lap": 1, "time_s": 90.0, "complete": True},
