@@ -19,6 +19,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+RENDER_DPI = 130          # for the inline web chart
+DEFAULT_COLORS = ("#3671C6", "#FF8000")   # lap1 (blue), lap2 (orange)
+
 
 def load(csv_path):
     df = pd.read_csv(csv_path)
@@ -100,7 +103,7 @@ def pick_laps(summary, laps=None):
     return int(complete["lap"].iloc[0]), int(complete["lap"].iloc[1])
 
 
-def build_figure(df, lap1_n, lap2_n, color1="#3671C6", color2="#FF8000"):
+def build_figure(df, lap1_n, lap2_n, color1=DEFAULT_COLORS[0], color2=DEFAULT_COLORS[1]):
     """Build the 6-panel engineer overlay comparing two laps.
     color1 / color2 are the line colors for lap1 / lap2.
     Returns (figure, info) where info has the net delta at the line."""
@@ -148,11 +151,11 @@ def build_figure(df, lap1_n, lap2_n, color1="#3671C6", color2="#FF8000"):
     return fig, {"net_delta": net}
 
 
-def render_png(df, lap1_n, lap2_n, color1="#3671C6", color2="#FF8000", dpi=130):
+def render_png(df, lap1_n, lap2_n, color1=DEFAULT_COLORS[0], color2=DEFAULT_COLORS[1]):
     """Render the overlay to PNG bytes (used by the web UI). Non-interactive."""
     fig, info = build_figure(df, lap1_n, lap2_n, color1=color1, color2=color2)
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight")
     plt.close(fig)
     return buf.getvalue(), info
 
