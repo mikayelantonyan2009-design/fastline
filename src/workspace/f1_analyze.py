@@ -68,13 +68,21 @@ def _select_pass(g):
     return max(passes, key=len)
 
 
+def _forward_only(g):
+    """Keep only forward-progress samples: each point must exceed the furthest
+    distance reached so far. A mid-lap rewind/flashback makes distance jump
+    backwards and re-cover ground already driven; sorting those by distance
+    overlays two drives at the same point (a filled band). Dropping the rewound
+    samples leaves one strictly-increasing, single-line trace."""
+    d = g["lap_distance_m"].values
+    prev_peak = np.concatenate(([-np.inf], np.maximum.accumulate(d)[:-1]))
+    return g[d > prev_peak]
+
+
 def get_lap(df, lap_num):
     g = df[df["lap"] == lap_num]
-    g = _select_pass(g)
-    # within a single pass distance is monotonic; sort + dedup guards against
-    # tiny wobble and stationary samples.
-    g = g.sort_values("lap_distance_m").drop_duplicates(subset="lap_distance_m",
-                                                        keep="first")
+    g = _select_pass(g)          # pick the right pass across full-lap resets
+    g = _forward_only(g)         # then drop sub-lap rewinds within that pass
     return g
 
 
