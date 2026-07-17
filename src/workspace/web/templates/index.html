@@ -96,14 +96,14 @@
   .tv-corner b { color:var(--blue); }
   .tv-big { font-size:52px; font-weight:800; line-height:.9; font-variant-numeric:tabular-nums; }
   .tv-big small { font-size:14px; color:var(--muted); font-weight:600; letter-spacing:0; }
-  .tv-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .tv-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(82px,1fr)); gap:10px; }
   .tv-bars { display:flex; flex-direction:column; gap:8px; }
   .tv-bar { display:flex; align-items:center; gap:10px; }
   .tv-bar .nm { width:62px; font-size:11px; text-transform:uppercase; color:var(--muted); font-weight:700; }
   .tv-trackbar { flex:1; height:10px; border-radius:6px; background:#0d1117; border:1px solid var(--border); overflow:hidden; }
   .tv-trackbar > i { display:block; height:100%; width:0; }
   .tv-bar .pct { width:38px; text-align:right; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
-  .tv-strip { position:relative; width:100%; height:120px; margin-top:16px; }
+  .tv-strip { position:relative; width:100%; height:340px; margin-top:16px; }
   .tv-strip canvas { position:absolute; inset:0; width:100%; height:100%; }
   #tvStripFx { cursor:grab; touch-action:none; }
 </style>
@@ -183,7 +183,8 @@
         <div class="tv-big"><span id="tvSpeed">—</span> <small>km/h</small></div>
         <div class="tv-metrics">
           <div class="stat"><div class="k">Gear</div><div class="v" id="tvGear">—</div></div>
-          <div class="stat"><div class="k">Lap distance</div><div class="v" id="tvDist" style="font-size:17px">—</div></div>
+          <div class="stat"><div class="k">RPM</div><div class="v" id="tvRpm" style="font-size:19px">—</div></div>
+          <div class="stat"><div class="k">Lap distance</div><div class="v" id="tvDist" style="font-size:15px">—</div></div>
         </div>
         <div class="tv-bars">
           <div class="tv-bar"><span class="nm">Throttle</span>
@@ -198,8 +199,8 @@
     <div class="tv-strip" id="tvStripBox">
       <canvas id="tvStrip"></canvas><canvas id="tvStripFx"></canvas>
     </div>
-    <div class="hint">Speed around the lap — drag here or on the track to move the marker.
-      Track shape is the real Interlagos centerline; the telemetry is your recorded lap.</div>
+    <div class="hint">Speed, throttle, brake, RPM and gear around the lap — drag here or on the track
+      to move the marker. Track shape is the real Interlagos centerline; the telemetry is your recorded lap.</div>
   </section>
 
   <!-- ================= COLOR MODAL ================= -->
@@ -357,7 +358,7 @@ $("#colorDoneBtn").onclick = () => {
 (() => {
   const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
   // real Interlagos centerline (vector geometry), ordered anticlockwise from S/F
-  const LINE=[[496.6,214.6],[480.4,218.9],[464.2,223.4],[448.1,227.9],[431.9,232.4],[415.8,236.9],[399.6,241.4],[383.4,245.9],[367.3,250.4],[351.1,254.9],[335.0,259.4],[318.8,264.0],[302.6,268.5],[286.5,273.0],[270.3,277.5],[254.2,282.0],[238.0,286.5],[222.2,291.9],[207.6,300.1],[193.9,309.7],[184.5,323.3],[182.5,339.6],[187.7,355.5],[199.0,367.8],[211.0,379.4],[223.7,390.4],[233.3,403.9],[235.3,420.2],[229.5,435.9],[221.0,450.3],[213.1,465.1],[207.0,480.7],[202.6,496.9],[200.1,513.4],[199.3,530.2],[201.3,546.8],[204.7,563.2],[210.0,579.1],[217.2,594.2],[226.2,608.3],[236.8,621.3],[248.8,633.0],[261.9,643.4],[276.1,652.3],[291.1,659.8],[306.8,665.7],[322.9,670.3],[339.1,674.9],[355.2,679.4],[371.3,684.0],[387.5,688.5],[403.7,692.9],[420.0,696.7],[436.3,700.5],[452.7,704.4],[469.0,708.3],[485.3,712.1],[501.7,716.0],[518.0,719.8],[534.3,723.6],[550.7,727.3],[567.1,731.0],[583.4,734.7],[599.8,738.4],[616.1,742.1],[632.5,745.8],[648.8,749.8],[665.1,753.8],[681.4,757.7],[697.7,761.7],[714.0,765.6],[730.3,769.6],[746.6,773.6],[762.9,777.5],[779.2,781.5],[795.5,785.4],[811.8,789.4],[828.1,793.3],[844.4,797.3],[860.7,801.3],[877.0,805.2],[893.3,809.2],[909.6,813.2],[926.0,816.4],[942.7,815.7],[957.4,808.0],[967.6,794.9],[973.4,779.2],[976.5,762.7],[979.4,746.2],[982.3,729.6],[985.3,713.1],[987.5,696.5],[988.6,679.8],[986.7,663.1],[983.3,646.8],[977.0,631.3],[968.2,617.0],[958.6,603.3],[947.0,591.2],[934.2,580.4],[920.8,570.3],[907.3,560.4],[893.6,550.7],[880.0,541.0],[866.3,531.2],[852.6,521.5],[838.9,511.8],[825.1,502.3],[811.2,492.9],[797.4,483.5],[783.5,474.1],[769.6,464.7],[755.7,455.3],[741.8,445.8],[728.3,435.9],[714.7,426.0],[701.2,416.1],[687.4,406.6],[673.6,397.0],[660.0,387.2],[648.2,375.5],[640.7,360.5],[637.0,344.3],[636.2,327.6],[637.0,310.8],[640.2,294.4],[645.9,278.7],[653.5,263.7],[662.9,249.9],[675.7,239.4],[691.0,232.5],[707.1,227.8],[723.3,223.6],[739.6,219.7],[756.0,216.3],[772.6,213.4],[789.1,210.5],[805.8,209.0],[822.5,209.0],[837.8,215.1],[846.5,229.1],[845.5,245.6],[837.8,260.3],[827.9,273.8],[819.4,288.2],[815.5,304.4],[817.9,320.8],[826.8,334.8],[839.6,345.3],[855.4,350.5],[872.1,349.6],[887.0,342.5],[900.4,332.4],[912.0,320.3],[923.5,308.0],[935.0,295.8],[947.2,284.3],[960.0,273.5],[973.9,264.2],[989.5,258.1],[1005.6,253.4],[1021.9,249.4],[1038.4,246.2],[1055.0,244.3],[1071.1,247.5],[1082.2,258.9],[1082.1,275.2],[1071.8,288.0],[1059.5,299.3],[1047.1,310.6],[1034.7,321.9],[1022.5,333.4],[1010.3,344.9],[998.4,356.7],[988.8,370.4],[982.0,385.7],[978.5,402.1],[977.0,418.8],[978.1,435.5],[981.4,451.9],[987.7,467.3],[996.7,481.5],[1007.6,494.3],[1020.9,504.3],[1034.8,513.8],[1049.1,522.5],[1063.4,531.3],[1077.8,539.9],[1092.4,548.2],[1106.9,556.5],[1121.5,564.9],[1136.0,573.4],[1150.4,581.9],[1164.8,590.5],[1179.7,598.1],[1196.0,597.0],[1209.1,587.0],[1216.9,572.2],[1222.8,556.5],[1228.3,540.7],[1233.9,524.9],[1239.5,509.1],[1245.1,493.2],[1248.3,476.8],[1247.4,460.1],[1245.0,443.5],[1241.9,427.0],[1238.2,410.7],[1234.3,394.4],[1230.5,378.0],[1224.9,362.2],[1218.2,346.9],[1211.4,331.5],[1204.4,316.3],[1196.2,301.6],[1188.0,287.0],[1179.2,272.8],[1168.9,259.5],[1157.4,247.3],[1145.4,235.6],[1132.0,225.6],[1117.5,217.3],[1102.0,210.7],[1086.1,205.5],[1069.9,201.3],[1053.6,197.3],[1037.2,193.4],[1020.8,190.0],[1004.4,186.5],[988.0,183.3],[971.3,181.0],[954.7,178.6],[938.3,175.5],[922.0,171.6],[905.7,167.6],[889.3,163.8],[872.9,160.5],[856.5,157.1],[840.2,152.9],[823.8,149.4],[807.1,147.9],[790.4,147.9],[773.6,148.6],[756.9,149.7],[740.3,152.0],[723.8,155.2],[707.5,159.0],[691.3,163.4],[675.1,167.9],[658.9,172.3],[642.7,176.5],[626.4,180.6],[610.2,184.8],[594.0,189.0],[577.7,193.2],[561.5,197.4],[545.2,201.6],[529.0,205.9],[512.8,210.2]];
+  const LINE=[[496.6,214.6],[480.4,218.9],[464.2,223.4],[448.1,227.9],[431.9,232.4],[415.8,236.9],[399.6,241.4],[383.4,245.9],[367.3,250.4],[351.1,254.9],[335.0,259.4],[318.8,264.0],[302.6,268.5],[286.5,273.0],[270.3,277.5],[254.2,282.0],[238.0,286.5],[222.2,291.9],[207.6,300.1],[193.9,309.7],[184.5,323.3],[182.5,339.6],[187.7,355.5],[199.0,367.8],[211.0,379.4],[223.7,390.4],[233.3,403.9],[235.3,420.2],[229.5,435.9],[221.0,450.3],[213.1,465.1],[207.0,480.7],[202.6,496.9],[200.1,513.4],[199.3,530.2],[201.3,546.8],[204.7,563.2],[210.0,579.1],[217.2,594.2],[226.2,608.3],[236.8,621.3],[248.8,633.0],[261.9,643.4],[276.1,652.3],[291.1,659.8],[306.8,665.7],[322.9,670.3],[339.1,674.9],[355.2,679.4],[371.3,684.0],[387.5,688.5],[403.7,692.9],[420.0,696.7],[436.3,700.5],[452.7,704.4],[469.0,708.3],[485.3,712.1],[501.7,716.0],[518.0,719.8],[534.3,723.6],[550.7,727.3],[567.1,731.0],[583.4,734.7],[599.8,738.4],[616.1,742.1],[632.5,745.8],[648.8,749.8],[665.1,753.8],[681.4,757.7],[697.7,761.7],[714.0,765.6],[730.3,769.6],[746.6,773.6],[762.9,777.5],[779.2,781.5],[795.5,785.4],[811.8,789.4],[828.1,793.3],[844.4,797.3],[860.7,801.3],[877.0,805.2],[893.3,809.2],[909.6,813.2],[926.0,816.4],[942.7,815.7],[957.4,808.0],[967.6,794.9],[973.4,779.2],[976.5,762.7],[979.4,746.2],[982.3,729.6],[985.3,713.1],[987.5,696.5],[988.6,679.8],[986.7,663.1],[983.3,646.8],[977.0,631.3],[968.2,617.0],[958.6,603.3],[947.0,591.2],[934.2,580.4],[920.8,570.3],[907.3,560.4],[893.6,550.7],[880.0,541.0],[866.3,531.2],[852.6,521.5],[838.9,511.8],[825.1,502.3],[811.2,492.9],[797.4,483.5],[783.5,474.1],[769.6,464.7],[755.7,455.3],[741.8,445.8],[728.3,435.9],[714.7,426.0],[701.2,416.1],[687.4,406.6],[673.6,397.0],[660.0,387.2],[648.2,375.5],[640.7,360.5],[637.0,344.3],[636.2,327.6],[637.0,310.8],[640.2,294.4],[645.9,278.7],[653.5,263.7],[662.9,249.9],[675.7,239.4],[691.0,232.5],[707.1,227.8],[723.3,223.6],[739.6,219.7],[756.0,216.3],[772.6,213.4],[789.1,210.5],[805.8,209.0],[822.5,209.0],[837.8,215.1],[846.5,229.1],[845.5,245.6],[837.8,260.3],[827.9,273.8],[819.4,288.2],[815.5,304.4],[817.9,320.8],[826.8,334.8],[839.6,345.3],[855.4,350.5],[872.1,349.6],[887.0,342.5],[900.4,332.4],[912.0,320.3],[923.5,308.0],[935.0,295.8],[947.2,284.3],[960.0,273.5],[973.9,264.2],[989.5,258.1],[1005.6,253.4],[1021.9,249.4],[1038.4,246.2],[1055.0,244.3],[1071.1,247.5],[1082.2,258.9],[1082.1,275.2],[1071.8,288.0],[1059.5,299.3],[1047.1,310.6],[1034.7,321.9],[1022.5,333.4],[1010.3,344.9],[998.4,356.7],[988.8,370.4],[982.0,385.7],[978.5,402.1],[977.0,418.8],[978.1,435.5],[981.4,451.9],[987.7,467.3],[996.7,481.5],[1007.6,494.3],[1020.9,504.3],[1034.8,513.8],[1049.1,522.5],[1063.4,531.3],[1077.8,539.9],[1092.4,548.2],[1106.9,556.5],[1121.5,564.9],[1136.0,573.4],[1150.4,581.9],[1164.8,590.5],[1179.7,598.1],[1196.0,597.0],[1209.1,587.0],[1216.9,572.2],[1222.8,556.5],[1228.3,540.7],[1233.9,524.9],[1239.5,509.1],[1245.1,493.2],[1248.3,476.8],[1247.4,460.1],[1245.0,443.5],[1241.9,427.0],[1238.2,410.7],[1234.3,394.4],[1230.5,378.0],[1224.9,362.2],[1218.2,346.9],[1211.4,331.5],[1204.4,316.3],[1196.2,301.6],[1188.0,287.0],[1179.2,272.8],[1168.9,259.5],[1157.4,247.3],[1145.4,235.6],[1129.3,231.6],[1113.2,227.6],[1097.0,223.6],[1080.9,219.7],[1064.7,215.7],[1048.6,211.7],[1032.5,207.7],[1016.3,203.7],[1000.2,199.7],[984.0,195.7],[967.9,191.8],[951.8,187.8],[935.6,183.8],[919.5,179.8],[903.3,175.8],[887.2,171.8],[871.1,167.8],[854.9,163.8],[838.8,159.9],[822.6,155.9],[806.5,151.9],[790.4,147.9],[773.6,148.6],[756.9,149.7],[740.3,152.0],[723.8,155.2],[707.5,159.0],[691.3,163.4],[675.1,167.9],[658.9,172.3],[642.7,176.5],[626.4,180.6],[610.2,184.8],[594.0,189.0],[577.7,193.2],[561.5,197.4],[545.2,201.6],[529.0,205.9],[512.8,210.2]];
   const N = LINE.length, two = n => (n<10?"0":"")+n;
   const nidx=(x,y)=>{let bi=0,bd=1e18;for(let i=0;i<N;i++){const d=(LINE[i][0]-x)**2+(LINE[i][1]-y)**2;if(d<bd){bd=d;bi=i;}}return bi;};
   const NAMES={1:"Senna S",2:"Senna S",3:"Curva do Sol",4:"Descida do Lago",5:"Ferradura",11:"Junção"};
@@ -383,6 +384,7 @@ $("#colorDoneBtn").onclick = () => {
       speed:d.map(x=>interp(x,tr.dist,tr.speed)),
       thr:d.map(x=>interp(x,tr.dist,tr.throttle)),
       brk:d.map(x=>interp(x,tr.dist,tr.brake)),
+      rpm:d.map(x=>interp(x,tr.dist,tr.rpm)),
       gear:d.map(x=>Math.round(interp(x,tr.dist,tr.gear))) };
   }
 
@@ -433,14 +435,34 @@ $("#colorDoneBtn").onclick = () => {
   function drawStrip(){
     const {ctx,w,h}=L.tvStrip; ctx.clearRect(0,0,w,h);
     if(!T){ sg=null; return; }
-    const padL=38,padR=8,padT=10,padB=18,gw=w-padL-padR,gh=h-padT-padB, X=i=>padL+i/(N-1)*gw;
-    const vmin=60, vmax=Math.ceil((Math.max(...T.speed)+10)/20)*20, Y=v=>padT+gh-(v-vmin)/(vmax-vmin)*gh;
-    for(let i=0;i<N-1;i++){ ctx.globalAlpha=.07; ctx.fillStyle=sectorColor(i); ctx.fillRect(X(i),padT,X(i+1)-X(i)+1,gh); } ctx.globalAlpha=1;
-    ctx.strokeStyle=css("--border"); ctx.fillStyle=css("--muted"); ctx.font="10px ui-monospace,Menlo,monospace"; ctx.textAlign="right"; ctx.textBaseline="middle";
-    [100,200,300].forEach(tk=>{ if(tk<vmin||tk>vmax)return; const y=Y(tk); ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(w-padR,y);ctx.stroke(); ctx.fillText(tk,padL-6,y); });
-    ctx.lineWidth=2; ctx.lineJoin="round";
-    for(let i=0;i<N-1;i++){ ctx.strokeStyle=sectorColor(i); ctx.beginPath(); ctx.moveTo(X(i),Y(T.speed[i])); ctx.lineTo(X(i+1),Y(T.speed[i+1])); ctx.stroke(); }
-    sg={padL,padT,gw,gh,X};
+    const padL=44,padR=10,padT=6,padB=6, gw=w-padL-padR, X=i=>padL+i/(N-1)*gw;
+    const rnd=(a,r)=>Math.ceil((Math.max(...a)+r*0.5)/r)*r;
+    const panels=[
+      {label:"Speed (km/h)", data:T.speed, min:0, max:rnd(T.speed,50), wt:2.2, sector:true},
+      {label:"Throttle %",   data:T.thr,   min:0, max:100,             wt:1,   col:"--green"},
+      {label:"Brake %",      data:T.brk,   min:0, max:100,             wt:1,   col:"--red"},
+      {label:"RPM",          data:T.rpm,   min:0, max:rnd(T.rpm,2000), wt:1.2, col:"--blue"},
+      {label:"Gear",         data:T.gear,  min:0.5, max:8.5,           wt:1,   col:"--muted", steps:true},
+    ];
+    const gap=10, totWt=panels.reduce((s,p)=>s+p.wt,0), plotH=h-padT-padB-gap*(panels.length-1);
+    ctx.font="9.5px ui-monospace,Menlo,monospace"; ctx.lineJoin="round";
+    let y=padT;
+    panels.forEach(p=>{
+      const bh=plotH*p.wt/totWt, top=y, bot=y+bh, Y=v=>bot-(v-p.min)/(p.max-p.min)*bh;
+      for(let i=0;i<N-1;i++){ ctx.globalAlpha=.06; ctx.fillStyle=sectorColor(i); ctx.fillRect(X(i),top,X(i+1)-X(i)+1,bh); } ctx.globalAlpha=1;
+      ctx.strokeStyle=css("--border"); ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(padL,bot); ctx.lineTo(w-padR,bot); ctx.stroke();
+      ctx.fillStyle=css("--muted"); ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillText(p.label, padL+3, top+2);
+      ctx.textAlign="right"; ctx.textBaseline="top"; ctx.fillText(Math.round(p.max), padL-4, top);
+      ctx.lineWidth=1.7;
+      if(p.sector){ for(let i=0;i<N-1;i++){ ctx.strokeStyle=sectorColor(i); ctx.beginPath(); ctx.moveTo(X(i),Y(p.data[i])); ctx.lineTo(X(i+1),Y(p.data[i+1])); ctx.stroke(); } }
+      else { ctx.strokeStyle=css(p.col); ctx.beginPath();
+        for(let i=0;i<N;i++){ const x=X(i),yy=Y(p.data[i]);
+          if(!i) ctx.moveTo(x,yy); else if(p.steps){ ctx.lineTo(x,Y(p.data[i-1])); ctx.lineTo(x,yy); } else ctx.lineTo(x,yy); }
+        ctx.stroke(); }
+      y=bot+gap;
+    });
+    sg={X, padL, gw, top:padT, bot:y-gap};
   }
 
   function drawFx(){
@@ -448,8 +470,8 @@ $("#colorDoneBtn").onclick = () => {
       ctx.beginPath();ctx.arc(q[0],q[1],11,0,7);ctx.fillStyle=sectorColor(idx);ctx.globalAlpha=.3;ctx.fill();ctx.globalAlpha=1;
       ctx.beginPath();ctx.arc(q[0],q[1],6,0,7);ctx.fillStyle="#fff";ctx.strokeStyle=css("--text");ctx.lineWidth=2.5;ctx.fill();ctx.stroke(); } }
     if(sg){ const {ctx,w,h}=L.tvStripFx; ctx.clearRect(0,0,w,h); const x=sg.X(idx);
-      ctx.strokeStyle=css("--text");ctx.globalAlpha=.5;ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
-      ctx.beginPath();ctx.moveTo(x,sg.padT);ctx.lineTo(x,sg.padT+sg.gh);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1; }
+      ctx.strokeStyle=css("--text");ctx.globalAlpha=.55;ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(x,sg.top);ctx.lineTo(x,sg.bot);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1; }
     readout();
   }
   const nearCorner=i=>{let best=null,bd=1e9;CORNERS.forEach(c=>{let d=Math.abs(c.idx-i);d=Math.min(d,N-d);if(d<bd){bd=d;best=c;}});return bd<N*0.03?best:null;};
@@ -457,6 +479,7 @@ $("#colorDoneBtn").onclick = () => {
     if(!T) return;
     $("#tvSpeed").textContent=Math.round(T.speed[idx]);
     $("#tvGear").textContent=T.gear[idx];
+    $("#tvRpm").textContent=Math.round(T.rpm[idx]);
     $("#tvDist").textContent=Math.round(T.lineDist[idx])+" / "+Math.round(T.lapLen)+" m";
     const thr=Math.round(T.thr[idx]),brk=Math.round(T.brk[idx]);
     $("#tvThr").style.width=thr+"%"; $("#tvThrP").textContent=thr+"%";

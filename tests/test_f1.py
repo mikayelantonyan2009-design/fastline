@@ -121,7 +121,7 @@ def test_lap_trace_endpoint(tmp_path, monkeypatch):
     tr = client.get(f"/api/sessions/{name}/lap/{lap}/trace").get_json()
     n = len(tr["dist"])
     assert n > 10
-    assert all(len(tr[k]) == n for k in ("speed", "throttle", "brake", "gear"))
+    assert all(len(tr[k]) == n for k in ("speed", "throttle", "brake", "gear", "rpm"))
     assert tr["track_len_m"] > 1000
     assert max(tr["speed"]) > 200
     assert client.get(f"/api/sessions/{name}/lap/999/trace").status_code == 400
