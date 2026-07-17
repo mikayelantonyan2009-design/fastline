@@ -442,14 +442,14 @@ $("#colorDoneBtn").onclick = () => {
   function drawStrip(){
     const {ctx,w,h}=L.tvStrip; ctx.clearRect(0,0,w,h);
     if(!T){ sg=null; return; }
-    const padL=44,padR=10,padT=18,padB=6, gw=w-padL-padR, X=i=>padL+i/(N-1)*gw;
+    const padL=58,padR=10,padT=18,padB=6, gw=w-padL-padR, X=i=>padL+i/(N-1)*gw;
     const rnd=(a,r)=>Math.ceil((Math.max(...a)+r*0.5)/r)*r;
     const panels=[
-      {label:"Speed (km/h)", data:T.speed, min:0, max:rnd(T.speed,50), wt:2.2, sector:true},
-      {label:"Throttle %",   data:T.thr,   min:0, max:100,             wt:1,   col:"--green"},
-      {label:"Brake %",      data:T.brk,   min:0, max:100,             wt:1,   col:"--red"},
-      {label:"RPM",          data:T.rpm,   min:0, max:rnd(T.rpm,2000), wt:1.2, col:"--blue"},
-      {label:"Gear",         data:T.gear,  min:0.5, max:8.5,           wt:1,   col:"--muted", steps:true},
+      {label:"Speed (km/h)", data:T.speed, min:0, max:rnd(T.speed,50), wt:2.2, sector:true, ticks:[0,100,200,300]},
+      {label:"Throttle %",   data:T.thr,   min:0, max:100,             wt:1,   col:"--green", ticks:[0,50,100]},
+      {label:"Brake %",      data:T.brk,   min:0, max:100,             wt:1,   col:"--red",   ticks:[0,50,100]},
+      {label:"RPM",          data:T.rpm,   min:0, max:rnd(T.rpm,2000), wt:1.2, col:"--blue",  ticks:[0,4000,8000,12000]},
+      {label:"Gear",         data:T.gear,  min:0.5, max:8.5,           wt:1,   col:"--muted", steps:true, ticks:[2,4,6,8]},
     ];
     const gap=10, totWt=panels.reduce((s,p)=>s+p.wt,0), plotH=h-padT-padB-gap*(panels.length-1);
     ctx.font="9.5px ui-monospace,Menlo,monospace"; ctx.lineJoin="round";
@@ -457,10 +457,14 @@ $("#colorDoneBtn").onclick = () => {
     panels.forEach(p=>{
       const bh=plotH*p.wt/totWt, top=y, bot=y+bh, Y=v=>bot-(v-p.min)/(p.max-p.min)*bh;
       for(let i=0;i<N-1;i++){ ctx.globalAlpha=.06; ctx.fillStyle=sectorColor(i); ctx.fillRect(X(i),top,X(i+1)-X(i)+1,bh); } ctx.globalAlpha=1;
-      ctx.strokeStyle=css("--border"); ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(padL,bot); ctx.lineTo(w-padR,bot); ctx.stroke();
-      ctx.fillStyle=css("--muted"); ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillText(p.label, padL+3, top+2);
-      ctx.textAlign="right"; ctx.textBaseline="top"; ctx.fillText(Math.round(p.max), padL-4, top);
+      // y-axis: faint gridlines + tick values (left) + rotated unit label (far left)
+      ctx.strokeStyle=css("--border"); ctx.fillStyle=css("--muted");
+      ctx.textAlign="right"; ctx.textBaseline="middle";
+      (p.ticks||[]).forEach(tk=>{ if(tk<p.min||tk>p.max) return; const ty=Y(tk);
+        ctx.globalAlpha=.45; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(padL,ty); ctx.lineTo(w-padR,ty); ctx.stroke(); ctx.globalAlpha=1;
+        ctx.fillText(String(tk), padL-6, ty); });
+      ctx.save(); ctx.translate(11,(top+bot)/2); ctx.rotate(-Math.PI/2);
+      ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(p.label, 0, 0); ctx.restore();
       ctx.lineWidth=1.7;
       if(p.sector){ for(let i=0;i<N-1;i++){ ctx.strokeStyle=sectorColor(i); ctx.beginPath(); ctx.moveTo(X(i),Y(p.data[i])); ctx.lineTo(X(i+1),Y(p.data[i+1])); ctx.stroke(); } }
       else { ctx.strokeStyle=css(p.col); ctx.beginPath();
