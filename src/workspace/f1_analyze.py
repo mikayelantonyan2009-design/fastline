@@ -25,7 +25,7 @@ DEFAULT_COLORS = ("#3671C6", "#FF8000")   # lap1 (blue), lap2 (orange)
 # Interlagos corner positions as a fraction of lap distance (from the track geometry)
 CORNER_FRAC = {1: 0.0731, 2: 0.0998, 3: 0.1459, 4: 0.3267, 5: 0.3728, 6: 0.469,
                7: 0.5035, 8: 0.5495, 9: 0.5686, 10: 0.6261, 11: 0.6872,
-               12: 0.7449, 13: 0.787, 14: 0.8448, 15: 0.9307}
+               12: 0.7449, 13: 0.787, 14: 0.8451, 15: 0.9307}
 
 
 def load(csv_path):
@@ -167,8 +167,7 @@ def build_figure(df, lap1_n, lap2_n, color1=DEFAULT_COLORS[0], color2=DEFAULT_CO
         xc = frac * track_len
         for a in ax:
             a.axvline(xc, color="0.5", lw=0.6, ls=(0, (3, 3)), alpha=0.35)
-        ax[0].annotate(f"T{turn}", xy=(xc, 1.005 if turn % 2 else 1.035),
-                       xycoords=("data", "axes fraction"),
+        ax[0].annotate(f"T{turn}", xy=(xc, 1.01), xycoords=("data", "axes fraction"),
                        ha="center", va="bottom", fontsize=7, color="0.4")
     fig.tight_layout()
     return fig, {"net_delta": net}
