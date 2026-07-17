@@ -102,6 +102,32 @@ def test_get_lap_drops_rewind_overlap():
     assert d.max() == 1000            # keeps the full completed pass
 
 
+def test_lap_trace_endpoint(tmp_path, monkeypatch):
+    """The track-view endpoint returns aligned per-sample arrays for a lap."""
+    monkeypatch.setenv("WORKSPACE_SESSIONS_DIR", str(tmp_path))
+    port = _free_udp_port()
+    rec = Recorder(tmp_path)
+    rec.start(port=port)
+    f1_sim.simulate(dest=("127.0.0.1", port), laps=3, hz=240, warmup=0.3)
+    time.sleep(0.3)
+    rec.stop()
+
+    from workspace.web.app import create_app
+    client = create_app().test_client()
+    name = client.get("/api/sessions").get_json()[0]["name"]
+    laps = client.get(f"/api/sessions/{name}/laps").get_json()["laps"]
+    lap = next(lp["lap"] for lp in laps if lp["complete"])
+
+    tr = client.get(f"/api/sessions/{name}/lap/{lap}/trace").get_json()
+    n = len(tr["dist"])
+    assert n > 10
+    assert all(len(tr[k]) == n for k in ("speed", "throttle", "brake", "gear"))
+    assert tr["track_len_m"] > 1000
+    assert max(tr["speed"]) > 200
+    assert client.get(f"/api/sessions/{name}/lap/999/trace").status_code == 400
+    assert client.get("/api/sessions/nope.csv/lap/1/trace").status_code == 404
+
+
 def test_pick_laps_needs_two_complete():
     import pandas as pd
     summary = pd.DataFrame([{"lap": 1, "time_s": 90.0, "complete": True},

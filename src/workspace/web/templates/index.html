@@ -9,6 +9,7 @@
     --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3;
     --muted:#8b949e; --red:#e10600; --blue:#3671C6; --orange:#FF8000;
     --green:#2ea043;
+    --s1:#ef1a2d; --s2:#34a8e8; --s3:#f5c518; --track:#2b333f;
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
@@ -71,6 +72,40 @@
   input.swatch::-webkit-color-swatch-wrapper { padding:0; }
   input.swatch::-webkit-color-swatch { border:none; border-radius:50%; }
   input.swatch::-moz-color-swatch { border:none; border-radius:50%; }
+  /* ---- track view ---- */
+  .tv-stage { display:grid; grid-template-columns:1.6fr 1fr; gap:16px; align-items:start; }
+  @media (max-width:820px){ .tv-stage { grid-template-columns:1fr; } }
+  .tv-trackbox { position:relative; width:100%; aspect-ratio:1.5/1;
+    background:#0d1117; border:1px solid var(--border); border-radius:10px; }
+  .tv-trackbox canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #tvFx { cursor:grab; touch-action:none; }
+  #tvFx.grabbing { cursor:grabbing; }
+  .tv-lbl { position:absolute; transform:translate(-50%,-50%); pointer-events:none;
+    font-family:ui-monospace,Menlo,monospace; white-space:nowrap; }
+  .tv-lbl.num { font-size:10px; font-weight:700; color:#fff; background:#0d1117;
+    border:1px solid var(--border); border-radius:20px; min-width:19px; height:17px;
+    display:grid; place-items:center; padding:0 3px; }
+  .tv-lbl.sf { font-size:9.5px; font-weight:700; color:#0d1117; background:var(--text);
+    border-radius:4px; padding:2px 5px; }
+  .tv-lbl.sect { font-size:10px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; }
+  .tv-legend { display:flex; gap:16px; margin-top:10px; flex-wrap:wrap; }
+  .tv-chip { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); font-weight:600; }
+  .tv-chip i { width:20px; height:6px; border-radius:4px; }
+  .tv-readout { display:flex; flex-direction:column; gap:12px; }
+  .tv-corner { font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); font-weight:700; }
+  .tv-corner b { color:var(--blue); }
+  .tv-big { font-size:52px; font-weight:800; line-height:.9; font-variant-numeric:tabular-nums; }
+  .tv-big small { font-size:14px; color:var(--muted); font-weight:600; letter-spacing:0; }
+  .tv-metrics { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .tv-bars { display:flex; flex-direction:column; gap:8px; }
+  .tv-bar { display:flex; align-items:center; gap:10px; }
+  .tv-bar .nm { width:62px; font-size:11px; text-transform:uppercase; color:var(--muted); font-weight:700; }
+  .tv-trackbar { flex:1; height:10px; border-radius:6px; background:#0d1117; border:1px solid var(--border); overflow:hidden; }
+  .tv-trackbar > i { display:block; height:100%; width:0; }
+  .tv-bar .pct { width:38px; text-align:right; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .tv-strip { position:relative; width:100%; height:120px; margin-top:16px; }
+  .tv-strip canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #tvStripFx { cursor:grab; touch-action:none; }
 </style>
 </head>
 <body>
@@ -119,6 +154,52 @@
     <div id="analyzeErr" class="err"></div>
     <div class="netdelta" id="netDelta"></div>
     <div class="chart-wrap" id="chartWrap"></div>
+  </section>
+
+  <!-- ================= TRACK VIEW ================= -->
+  <section class="panel">
+    <h2>Track view — Interlagos</h2>
+    <div class="row">
+      <label>Session
+        <select id="tvSession"><option value="">— select —</option></select>
+      </label>
+      <button id="tvRefresh" class="ghost">↻ Refresh</button>
+      <label>Lap <select id="tvLap"></select></label>
+    </div>
+    <div id="tvErr" class="err"></div>
+    <div class="tv-stage" style="margin-top:14px">
+      <div>
+        <div class="tv-trackbox" id="tvTrackbox">
+          <canvas id="tvBase"></canvas><canvas id="tvFx"></canvas>
+        </div>
+        <div class="tv-legend">
+          <span class="tv-chip"><i style="background:var(--s1)"></i>Sector 1</span>
+          <span class="tv-chip"><i style="background:var(--s2)"></i>Sector 2</span>
+          <span class="tv-chip"><i style="background:var(--s3)"></i>Sector 3</span>
+        </div>
+      </div>
+      <div class="tv-readout">
+        <div class="tv-corner" id="tvCorner">Pick a lap, then drag the track</div>
+        <div class="tv-big"><span id="tvSpeed">—</span> <small>km/h</small></div>
+        <div class="tv-metrics">
+          <div class="stat"><div class="k">Gear</div><div class="v" id="tvGear">—</div></div>
+          <div class="stat"><div class="k">Lap distance</div><div class="v" id="tvDist" style="font-size:17px">—</div></div>
+        </div>
+        <div class="tv-bars">
+          <div class="tv-bar"><span class="nm">Throttle</span>
+            <span class="tv-trackbar"><i id="tvThr" style="background:var(--green)"></i></span>
+            <span class="pct" id="tvThrP">0%</span></div>
+          <div class="tv-bar"><span class="nm">Brake</span>
+            <span class="tv-trackbar"><i id="tvBrk" style="background:var(--red)"></i></span>
+            <span class="pct" id="tvBrkP">0%</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="tv-strip" id="tvStripBox">
+      <canvas id="tvStrip"></canvas><canvas id="tvStripFx"></canvas>
+    </div>
+    <div class="hint">Speed around the lap — drag here or on the track to move the marker.
+      Track shape is the real Interlagos centerline; the telemetry is your recorded lap.</div>
   </section>
 
   <!-- ================= COLOR MODAL ================= -->
@@ -196,10 +277,13 @@ setInterval(pollStatus, 1000); pollStatus();
 // ---- sessions & analysis --------------------------------------------
 async function loadSessions(){
   const list = await (await fetch("/api/sessions")).json();
-  const sel = $("#sessionSel"); const cur = sel.value;
-  sel.innerHTML = '<option value="">— select —</option>' +
+  const opts = '<option value="">— select —</option>' +
     list.map(s=>`<option value="${s.name}">${s.name}</option>`).join("");
-  if(list.some(s=>s.name===cur)) sel.value = cur;
+  for(const id of ["#sessionSel","#tvSession"]){
+    const sel = $(id); const cur = sel.value;
+    sel.innerHTML = opts;
+    if(list.some(s=>s.name===cur)) sel.value = cur;
+  }
 }
 $("#refreshBtn").onclick = loadSessions;
 
@@ -268,6 +352,157 @@ $("#colorDoneBtn").onclick = () => {
   closeModal();
   runAnalyze(colors);
 };
+
+// ============================ TRACK VIEW ============================
+(() => {
+  const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+  // real Interlagos centerline (vector geometry), ordered anticlockwise from S/F
+  const LINE=[[496.6,214.6],[480.4,218.9],[464.2,223.4],[448.1,227.9],[431.9,232.4],[415.8,236.9],[399.6,241.4],[383.4,245.9],[367.3,250.4],[351.1,254.9],[335.0,259.4],[318.8,264.0],[302.6,268.5],[286.5,273.0],[270.3,277.5],[254.2,282.0],[238.0,286.5],[222.2,291.9],[207.6,300.1],[193.9,309.7],[184.5,323.3],[182.5,339.6],[187.7,355.5],[199.0,367.8],[211.0,379.4],[223.7,390.4],[233.3,403.9],[235.3,420.2],[229.5,435.9],[221.0,450.3],[213.1,465.1],[207.0,480.7],[202.6,496.9],[200.1,513.4],[199.3,530.2],[201.3,546.8],[204.7,563.2],[210.0,579.1],[217.2,594.2],[226.2,608.3],[236.8,621.3],[248.8,633.0],[261.9,643.4],[276.1,652.3],[291.1,659.8],[306.8,665.7],[322.9,670.3],[339.1,674.9],[355.2,679.4],[371.3,684.0],[387.5,688.5],[403.7,692.9],[420.0,696.7],[436.3,700.5],[452.7,704.4],[469.0,708.3],[485.3,712.1],[501.7,716.0],[518.0,719.8],[534.3,723.6],[550.7,727.3],[567.1,731.0],[583.4,734.7],[599.8,738.4],[616.1,742.1],[632.5,745.8],[648.8,749.8],[665.1,753.8],[681.4,757.7],[697.7,761.7],[714.0,765.6],[730.3,769.6],[746.6,773.6],[762.9,777.5],[779.2,781.5],[795.5,785.4],[811.8,789.4],[828.1,793.3],[844.4,797.3],[860.7,801.3],[877.0,805.2],[893.3,809.2],[909.6,813.2],[926.0,816.4],[942.7,815.7],[957.4,808.0],[967.6,794.9],[973.4,779.2],[976.5,762.7],[979.4,746.2],[982.3,729.6],[985.3,713.1],[987.5,696.5],[988.6,679.8],[986.7,663.1],[983.3,646.8],[977.0,631.3],[968.2,617.0],[958.6,603.3],[947.0,591.2],[934.2,580.4],[920.8,570.3],[907.3,560.4],[893.6,550.7],[880.0,541.0],[866.3,531.2],[852.6,521.5],[838.9,511.8],[825.1,502.3],[811.2,492.9],[797.4,483.5],[783.5,474.1],[769.6,464.7],[755.7,455.3],[741.8,445.8],[728.3,435.9],[714.7,426.0],[701.2,416.1],[687.4,406.6],[673.6,397.0],[660.0,387.2],[648.2,375.5],[640.7,360.5],[637.0,344.3],[636.2,327.6],[637.0,310.8],[640.2,294.4],[645.9,278.7],[653.5,263.7],[662.9,249.9],[675.7,239.4],[691.0,232.5],[707.1,227.8],[723.3,223.6],[739.6,219.7],[756.0,216.3],[772.6,213.4],[789.1,210.5],[805.8,209.0],[822.5,209.0],[837.8,215.1],[846.5,229.1],[845.5,245.6],[837.8,260.3],[827.9,273.8],[819.4,288.2],[815.5,304.4],[817.9,320.8],[826.8,334.8],[839.6,345.3],[855.4,350.5],[872.1,349.6],[887.0,342.5],[900.4,332.4],[912.0,320.3],[923.5,308.0],[935.0,295.8],[947.2,284.3],[960.0,273.5],[973.9,264.2],[989.5,258.1],[1005.6,253.4],[1021.9,249.4],[1038.4,246.2],[1055.0,244.3],[1071.1,247.5],[1082.2,258.9],[1082.1,275.2],[1071.8,288.0],[1059.5,299.3],[1047.1,310.6],[1034.7,321.9],[1022.5,333.4],[1010.3,344.9],[998.4,356.7],[988.8,370.4],[982.0,385.7],[978.5,402.1],[977.0,418.8],[978.1,435.5],[981.4,451.9],[987.7,467.3],[996.7,481.5],[1007.6,494.3],[1020.9,504.3],[1034.8,513.8],[1049.1,522.5],[1063.4,531.3],[1077.8,539.9],[1092.4,548.2],[1106.9,556.5],[1121.5,564.9],[1136.0,573.4],[1150.4,581.9],[1164.8,590.5],[1179.7,598.1],[1196.0,597.0],[1209.1,587.0],[1216.9,572.2],[1222.8,556.5],[1228.3,540.7],[1233.9,524.9],[1239.5,509.1],[1245.1,493.2],[1248.3,476.8],[1247.4,460.1],[1245.0,443.5],[1241.9,427.0],[1238.2,410.7],[1234.3,394.4],[1230.5,378.0],[1224.9,362.2],[1218.2,346.9],[1211.4,331.5],[1204.4,316.3],[1196.2,301.6],[1188.0,287.0],[1179.2,272.8],[1168.9,259.5],[1157.4,247.3],[1145.4,235.6],[1132.0,225.6],[1117.5,217.3],[1102.0,210.7],[1086.1,205.5],[1069.9,201.3],[1053.6,197.3],[1037.2,193.4],[1020.8,190.0],[1004.4,186.5],[988.0,183.3],[971.3,181.0],[954.7,178.6],[938.3,175.5],[922.0,171.6],[905.7,167.6],[889.3,163.8],[872.9,160.5],[856.5,157.1],[840.2,152.9],[823.8,149.4],[807.1,147.9],[790.4,147.9],[773.6,148.6],[756.9,149.7],[740.3,152.0],[723.8,155.2],[707.5,159.0],[691.3,163.4],[675.1,167.9],[658.9,172.3],[642.7,176.5],[626.4,180.6],[610.2,184.8],[594.0,189.0],[577.7,193.2],[561.5,197.4],[545.2,201.6],[529.0,205.9],[512.8,210.2]];
+  const N = LINE.length, two = n => (n<10?"0":"")+n;
+  const nidx=(x,y)=>{let bi=0,bd=1e18;for(let i=0;i<N;i++){const d=(LINE[i][0]-x)**2+(LINE[i][1]-y)**2;if(d<bd){bd=d;bi=i;}}return bi;};
+  const NAMES={1:"Senna S",2:"Senna S",3:"Curva do Sol",4:"Descida do Lago",5:"Ferradura",11:"Junção"};
+  const CORNERS=[[1,212,322],[2,236,394],[3,243,578],[4,940,788],[5,950,624],[6,650,357],[7,706,264],
+    [8,833,249],[9,821,350],[10,1041,272],[11,997,431],[12,1166,588],[13,1240,464],[14,1145,227],[15,797,141]]
+    .map(([t,x,y])=>({t,x,y,name:NAMES[t]||"",idx:nidx(x,y)}));
+  const SEC1_END=nidx(795,775), SEC2_END=nidx(1120,560);
+  const sectorOf=i=>i<SEC1_END?1:i<SEC2_END?2:3;
+  const SVAR={1:"--s1",2:"--s2",3:"--s3"};
+  const sectorColor=i=>css(SVAR[sectorOf(i)]);
+
+  const interp=(x,xs,ys)=>{ if(x<=xs[0])return ys[0]; const n=xs.length; if(x>=xs[n-1])return ys[n-1];
+    let lo=0,hi=n-1; while(hi-lo>1){const m=(lo+hi)>>1; xs[m]<=x?lo=m:hi=m;}
+    const t=(x-xs[lo])/((xs[hi]-xs[lo])||1); return ys[lo]+(ys[hi]-ys[lo])*t; };
+
+  let T=null, idx=0, proj=null;
+  function buildT(tr){
+    const cum=[0];
+    for(let i=1;i<N;i++) cum[i]=cum[i-1]+Math.hypot(LINE[i][0]-LINE[i-1][0],LINE[i][1]-LINE[i-1][1]);
+    const total=cum[N-1]+Math.hypot(LINE[0][0]-LINE[N-1][0],LINE[0][1]-LINE[N-1][1]);
+    const tl=tr.track_len_m||4309, d=cum.map(c=>c/total*tl);
+    return { lapLen:tl, lineDist:d,
+      speed:d.map(x=>interp(x,tr.dist,tr.speed)),
+      thr:d.map(x=>interp(x,tr.dist,tr.throttle)),
+      brk:d.map(x=>interp(x,tr.dist,tr.brake)),
+      gear:d.map(x=>Math.round(interp(x,tr.dist,tr.gear))) };
+  }
+
+  const L={};
+  function size(id){ const cv=document.getElementById(id), r=cv.getBoundingClientRect(), dpr=Math.min(2,devicePixelRatio||1);
+    cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
+    const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); L[id]={ctx,w:r.width,h:r.height}; }
+  function makeProj(w,h,pad){ let a=1e9,b=1e9,c=-1e9,d=-1e9;
+    LINE.forEach(p=>{a=Math.min(a,p[0]);b=Math.min(b,p[1]);c=Math.max(c,p[0]);d=Math.max(d,p[1]);});
+    const s=Math.min((w-2*pad)/(c-a),(h-2*pad)/(d-b));
+    const ox=pad+((w-2*pad)-(c-a)*s)/2, oy=pad+((h-2*pad)-(d-b)*s)/2;
+    return p=>[ox+(p[0]-a)*s, oy+(p[1]-b)*s]; }
+  function pathSmooth(ctx,p,closed){ const n=p.length;
+    if(closed){ const a=p[n-1],b=p[0]; ctx.moveTo((a[0]+b[0])/2,(a[1]+b[1])/2);
+      for(let i=0;i<n;i++){const c=p[i],e=p[(i+1)%n];ctx.quadraticCurveTo(c[0],c[1],(c[0]+e[0])/2,(c[1]+e[1])/2);} ctx.closePath(); }
+    else { ctx.moveTo(p[0][0],p[0][1]);
+      for(let i=1;i<n-1;i++){const c=p[i],e=p[i+1];ctx.quadraticCurveTo(c[0],c[1],(c[0]+e[0])/2,(c[1]+e[1])/2);} ctx.lineTo(p[n-1][0],p[n-1][1]); } }
+
+  function drawTrack(){
+    const {ctx,w,h}=L.tvBase; ctx.clearRect(0,0,w,h);
+    proj=makeProj(w,h,44); const Q=LINE.map(proj);
+    ctx.lineJoin="round"; ctx.lineCap="round"; ctx.strokeStyle=css("--track"); ctx.lineWidth=14;
+    ctx.beginPath(); pathSmooth(ctx,Q,true); ctx.stroke();
+    ctx.lineCap="butt"; ctx.lineWidth=8;
+    [[0,SEC1_END,"--s1"],[SEC1_END,SEC2_END,"--s2"],[SEC2_END,N,"--s3"]].forEach(([a,b,v])=>{
+      const seg=[]; for(let i=a;i<=b;i++) seg.push(Q[i%N]);
+      ctx.strokeStyle=css(v); ctx.beginPath(); pathSmooth(ctx,seg,false); ctx.stroke(); });
+    const s0=Q[0],s1=Q[1],an=Math.atan2(s1[1]-s0[1],s1[0]-s0[0])+Math.PI/2;
+    ctx.lineCap="round"; ctx.strokeStyle=css("--text"); ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(s0[0]+Math.cos(an)*9,s0[1]+Math.sin(an)*9); ctx.lineTo(s0[0]-Math.cos(an)*9,s0[1]-Math.sin(an)*9); ctx.stroke();
+    placeLabels(Q);
+  }
+  function placeLabels(Q){
+    const box=$("#tvTrackbox"); box.querySelectorAll(".tv-lbl").forEach(e=>e.remove());
+    let cx=0,cy=0; Q.forEach(p=>{cx+=p[0];cy+=p[1];}); cx/=N; cy/=N;
+    const put=(cls,html,x,y)=>{const el=document.createElement("div");el.className="tv-lbl "+cls;el.innerHTML=html;el.style.left=x+"px";el.style.top=y+"px";box.appendChild(el);return el;};
+    const outward=(i,off)=>{const a=Q[(i-3+N)%N],b=Q[(i+3)%N];let nx=-(b[1]-a[1]),ny=(b[0]-a[0]);const m=Math.hypot(nx,ny)||1;nx/=m;ny/=m;const p=Q[i];if(nx*(p[0]-cx)+ny*(p[1]-cy)<0){nx=-nx;ny=-ny;}return [p[0]+nx*off,p[1]+ny*off];};
+    const OFF={7:-26,9:-30,11:26}, POS={8:[-16,-8],10:[-8,20]};
+    CORNERS.forEach(c=>{ let x,y; if(POS[c.t]){const p=Q[c.idx];x=p[0]+POS[c.t][0];y=p[1]+POS[c.t][1];} else {[x,y]=outward(c.idx,OFF[c.t]??22);} put("num",two(c.t),x,y); });
+    { const [x,y]=outward(0,24); put("sf","S/F",x,y); }
+    const t3=CORNERS.find(c=>c.t===3), t6=CORNERS.find(c=>c.t===6), q6=Q[t6.idx];
+    { const [x,y]=outward(t3.idx,-46); put("sect","Sector 1",x,y).style.color=css("--s1"); }
+    put("sect","Sector 2",q6[0]-40,q6[1]-38).style.color=css("--s2");
+    { const [x,y]=outward(Math.round((SEC2_END+N)*0.5),32); put("sect","Sector 3",x,y).style.color=css("--s3"); }
+  }
+
+  let sg=null;
+  function drawStrip(){
+    const {ctx,w,h}=L.tvStrip; ctx.clearRect(0,0,w,h);
+    if(!T){ sg=null; return; }
+    const padL=38,padR=8,padT=10,padB=18,gw=w-padL-padR,gh=h-padT-padB, X=i=>padL+i/(N-1)*gw;
+    const vmin=60, vmax=Math.ceil((Math.max(...T.speed)+10)/20)*20, Y=v=>padT+gh-(v-vmin)/(vmax-vmin)*gh;
+    for(let i=0;i<N-1;i++){ ctx.globalAlpha=.07; ctx.fillStyle=sectorColor(i); ctx.fillRect(X(i),padT,X(i+1)-X(i)+1,gh); } ctx.globalAlpha=1;
+    ctx.strokeStyle=css("--border"); ctx.fillStyle=css("--muted"); ctx.font="10px ui-monospace,Menlo,monospace"; ctx.textAlign="right"; ctx.textBaseline="middle";
+    [100,200,300].forEach(tk=>{ if(tk<vmin||tk>vmax)return; const y=Y(tk); ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(w-padR,y);ctx.stroke(); ctx.fillText(tk,padL-6,y); });
+    ctx.lineWidth=2; ctx.lineJoin="round";
+    for(let i=0;i<N-1;i++){ ctx.strokeStyle=sectorColor(i); ctx.beginPath(); ctx.moveTo(X(i),Y(T.speed[i])); ctx.lineTo(X(i+1),Y(T.speed[i+1])); ctx.stroke(); }
+    sg={padL,padT,gw,gh,X};
+  }
+
+  function drawFx(){
+    if(proj){ const {ctx,w,h}=L.tvFx; ctx.clearRect(0,0,w,h); if(T){ const q=proj(LINE[idx]);
+      ctx.beginPath();ctx.arc(q[0],q[1],11,0,7);ctx.fillStyle=sectorColor(idx);ctx.globalAlpha=.3;ctx.fill();ctx.globalAlpha=1;
+      ctx.beginPath();ctx.arc(q[0],q[1],6,0,7);ctx.fillStyle="#fff";ctx.strokeStyle=css("--text");ctx.lineWidth=2.5;ctx.fill();ctx.stroke(); } }
+    if(sg){ const {ctx,w,h}=L.tvStripFx; ctx.clearRect(0,0,w,h); const x=sg.X(idx);
+      ctx.strokeStyle=css("--text");ctx.globalAlpha=.5;ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(x,sg.padT);ctx.lineTo(x,sg.padT+sg.gh);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1; }
+    readout();
+  }
+  const nearCorner=i=>{let best=null,bd=1e9;CORNERS.forEach(c=>{let d=Math.abs(c.idx-i);d=Math.min(d,N-d);if(d<bd){bd=d;best=c;}});return bd<N*0.03?best:null;};
+  function readout(){
+    if(!T) return;
+    $("#tvSpeed").textContent=Math.round(T.speed[idx]);
+    $("#tvGear").textContent=T.gear[idx];
+    $("#tvDist").textContent=Math.round(T.lineDist[idx])+" / "+Math.round(T.lapLen)+" m";
+    const thr=Math.round(T.thr[idx]),brk=Math.round(T.brk[idx]);
+    $("#tvThr").style.width=thr+"%"; $("#tvThrP").textContent=thr+"%";
+    $("#tvBrk").style.width=brk+"%"; $("#tvBrkP").textContent=brk+"%";
+    const c=nearCorner(idx);
+    $("#tvCorner").innerHTML=c?`Turn ${two(c.t)}${c.name?" · ":""}<b>${c.name||""}</b>`:`<b>${T.speed[idx]>300?"Full throttle":"Between corners"}</b>`;
+  }
+  const setIdx=i=>{ idx=((i%N)+N)%N; drawFx(); };
+
+  let drag=null;
+  const seekTrack=e=>{ if(!proj||!T)return; const r=$("#tvFx").getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+    let bi=0,bd=1e18; for(let i=0;i<N;i++){const q=proj(LINE[i]);const d=(q[0]-mx)**2+(q[1]-my)**2;if(d<bd){bd=d;bi=i;}} setIdx(bi); };
+  const seekStrip=e=>{ if(!sg||!T)return; const r=$("#tvStripFx").getBoundingClientRect(); setIdx(Math.round((e.clientX-r.left-sg.padL)/sg.gw*(N-1))); };
+  function bind(id,which,seek){ const el=$(id);
+    el.addEventListener("pointerdown",e=>{drag=which;el.classList.add("grabbing");el.setPointerCapture(e.pointerId);seek(e);});
+    el.addEventListener("pointermove",e=>{if(drag===which)seek(e);});
+    el.addEventListener("pointerup",()=>{drag=null;el.classList.remove("grabbing");});
+    el.addEventListener("pointercancel",()=>{drag=null;el.classList.remove("grabbing");}); }
+  bind("#tvFx","track",seekTrack); bind("#tvStripFx","strip",seekStrip);
+
+  function layout(){ ["tvBase","tvFx","tvStrip","tvStripFx"].forEach(size); drawTrack(); drawStrip(); drawFx(); }
+  let rt=0; const ro=new ResizeObserver(()=>{clearTimeout(rt);rt=setTimeout(layout,60);});
+  ro.observe($("#tvTrackbox")); ro.observe($("#tvStripBox"));
+  new MutationObserver(layout).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+
+  async function loadLap(name,lap){
+    $("#tvErr").textContent="";
+    const r=await fetch(`/api/sessions/${encodeURIComponent(name)}/lap/${lap}/trace`);
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok){ T=null; $("#tvErr").textContent=data.error||"Could not load lap"; layout(); return; }
+    T=buildT(data); idx=0; layout();
+  }
+  $("#tvSession").onchange = async () => {
+    const name=$("#tvSession").value; T=null; $("#tvLap").innerHTML=""; layout();
+    if(!name) return;
+    const {laps} = await (await fetch(`/api/sessions/${encodeURIComponent(name)}/laps`)).json();
+    const usable=(laps||[]).filter(l=>l.complete);
+    const list=usable.length?usable:(laps||[]);
+    if(!list.length){ $("#tvErr").textContent="No usable laps in this session."; return; }
+    $("#tvLap").innerHTML=list.map(l=>`<option value="${l.lap}">Lap ${l.lap} — ${l.time_s.toFixed(3)}s${l.complete?"":" (partial)"}</option>`).join("");
+    loadLap(name,list[0].lap);
+  };
+  $("#tvLap").onchange = () => { const n=$("#tvSession").value; if(n) loadLap(n,parseInt($("#tvLap").value)); };
+  $("#tvRefresh").onclick = loadSessions;
+  layout();
+})();
 
 loadSessions();
 </script>
