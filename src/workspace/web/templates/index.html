@@ -138,24 +138,6 @@
     <div class="hint">No PS5? Click <b>Start recording</b>, then <b>Demo feed</b> to generate a few synthetic laps, then Stop.</div>
   </section>
 
-  <!-- ================= ANALYZE ================= -->
-  <section class="panel">
-    <h2>Analyze &amp; compare laps</h2>
-    <div class="row">
-      <label>Session
-        <select id="sessionSel"><option value="">— select —</option></select>
-      </label>
-      <button id="refreshBtn" class="ghost">↻ Refresh</button>
-      <label>Lap A <select id="lapA"></select></label>
-      <label>Lap B <select id="lapB"></select></label>
-      <button id="analyzeBtn" class="primary" disabled>Generate chart</button>
-    </div>
-    <div id="lapTableWrap"></div>
-    <div id="analyzeErr" class="err"></div>
-    <div class="netdelta" id="netDelta"></div>
-    <div class="chart-wrap" id="chartWrap"></div>
-  </section>
-
   <!-- ================= TRACK VIEW ================= -->
   <section class="panel">
     <h2>Track view — Interlagos</h2>
@@ -199,8 +181,31 @@
     <div class="tv-strip" id="tvStripBox">
       <canvas id="tvStrip"></canvas><canvas id="tvStripFx"></canvas>
     </div>
-    <div class="hint">Speed, throttle, brake, RPM and gear around the lap — drag here or on the track
-      to move the marker. Track shape is the real Interlagos centerline; the telemetry is your recorded lap.</div>
+    <div class="row" style="margin-top:12px; align-items:center; gap:12px">
+      <button id="tvPlay" class="primary" disabled>▶ Play lap</button>
+      <span class="muted" id="tvPlayInfo"></span>
+    </div>
+    <div class="hint">Speed, throttle, brake, RPM and gear around the lap — drag here or on the track,
+      or press <b>Play lap</b> to run it at real pace. Track shape is the real Interlagos centerline;
+      the telemetry is your recorded lap.</div>
+  </section>
+
+  <!-- ================= ANALYZE ================= -->
+  <section class="panel">
+    <h2>Analyze &amp; compare laps</h2>
+    <div class="row">
+      <label>Session
+        <select id="sessionSel"><option value="">— select —</option></select>
+      </label>
+      <button id="refreshBtn" class="ghost">↻ Refresh</button>
+      <label>Lap A <select id="lapA"></select></label>
+      <label>Lap B <select id="lapB"></select></label>
+      <button id="analyzeBtn" class="primary" disabled>Generate chart</button>
+    </div>
+    <div id="lapTableWrap"></div>
+    <div id="analyzeErr" class="err"></div>
+    <div class="netdelta" id="netDelta"></div>
+    <div class="chart-wrap" id="chartWrap"></div>
   </section>
 
   <!-- ================= COLOR MODAL ================= -->
@@ -380,13 +385,15 @@ $("#colorDoneBtn").onclick = () => {
     for(let i=1;i<N;i++) cum[i]=cum[i-1]+Math.hypot(LINE[i][0]-LINE[i-1][0],LINE[i][1]-LINE[i-1][1]);
     const total=cum[N-1]+Math.hypot(LINE[0][0]-LINE[N-1][0],LINE[0][1]-LINE[N-1][1]);
     const tl=tr.track_len_m||4309, d=cum.map(c=>c/total*tl);
-    return { lapLen:tl, lineDist:d,
-      speed:d.map(x=>interp(x,tr.dist,tr.speed)),
-      thr:d.map(x=>interp(x,tr.dist,tr.throttle)),
-      brk:d.map(x=>interp(x,tr.dist,tr.brake)),
-      rpm:d.map(x=>interp(x,tr.dist,tr.rpm)),
-      gear:d.map(x=>Math.round(interp(x,tr.dist,tr.gear))) };
+    const map=arr=>d.map(x=>interp(x,tr.dist,arr));
+    let tt=map(tr.time); const t0=tt[0]; tt=tt.map(t=>t-t0);   // seconds into lap, start at 0
+    for(let i=1;i<N;i++) if(tt[i]<tt[i-1]) tt[i]=tt[i-1];      // monotonic for playback
+    return { lapLen:tl, lineDist:d, time:tt,
+      speed:map(tr.speed), thr:map(tr.throttle), brk:map(tr.brake),
+      rpm:map(tr.rpm), gear:map(tr.gear).map(Math.round) };
   }
+  const timeToIdx=t=>{ const a=T.time; if(t<=a[0])return 0; if(t>=a[N-1])return N-1;
+    let lo=0,hi=N-1; while(hi-lo>1){const m=(lo+hi)>>1; a[m]<=t?lo=m:hi=m;} return lo; };
 
   const L={};
   function size(id){ const cv=document.getElementById(id), r=cv.getBoundingClientRect(), dpr=Math.min(2,devicePixelRatio||1);
@@ -494,11 +501,24 @@ $("#colorDoneBtn").onclick = () => {
     let bi=0,bd=1e18; for(let i=0;i<N;i++){const q=proj(LINE[i]);const d=(q[0]-mx)**2+(q[1]-my)**2;if(d<bd){bd=d;bi=i;}} setIdx(bi); };
   const seekStrip=e=>{ if(!sg||!T)return; const r=$("#tvStripFx").getBoundingClientRect(); setIdx(Math.round((e.clientX-r.left-sg.padL)/sg.gw*(N-1))); };
   function bind(id,which,seek){ const el=$(id);
-    el.addEventListener("pointerdown",e=>{drag=which;el.classList.add("grabbing");el.setPointerCapture(e.pointerId);seek(e);});
+    el.addEventListener("pointerdown",e=>{stopPlay();drag=which;el.classList.add("grabbing");el.setPointerCapture(e.pointerId);seek(e);});
     el.addEventListener("pointermove",e=>{if(drag===which)seek(e);});
     el.addEventListener("pointerup",()=>{drag=null;el.classList.remove("grabbing");});
     el.addEventListener("pointercancel",()=>{drag=null;el.classList.remove("grabbing");}); }
   bind("#tvFx","track",seekTrack); bind("#tvStripFx","strip",seekStrip);
+
+  // ---- play the lap back at real pace (driven by recorded lap time) ----
+  let playing=false, playRaf=0, playAnchor=0, playFrom=0;
+  function stopPlay(){ if(!playing && !playRaf) return; playing=false; cancelAnimationFrame(playRaf); playRaf=0; playAnchor=0; $("#tvPlay").textContent="▶ Play lap"; }
+  function playFrame(ts){ if(!playing) return; if(!playAnchor) playAnchor=ts;
+    const el=playFrom+(ts-playAnchor)/1000;
+    if(el>=T.time[N-1]){ setIdx(N-1); stopPlay(); return; }
+    setIdx(timeToIdx(el)); playRaf=requestAnimationFrame(playFrame); }
+  $("#tvPlay").onclick=()=>{ if(!T) return;
+    if(playing){ stopPlay(); return; }
+    playing=true; $("#tvPlay").textContent="❚❚ Pause"; playAnchor=0;
+    playFrom=(idx>=N-1)?0:T.time[idx];         // resume from marker, restart if at the line
+    playRaf=requestAnimationFrame(playFrame); };
 
   function layout(){ ["tvBase","tvFx","tvStrip","tvStripFx"].forEach(size); drawTrack(); drawStrip(); drawFx(); }
   let rt=0; const ro=new ResizeObserver(()=>{clearTimeout(rt);rt=setTimeout(layout,60);});
@@ -506,14 +526,18 @@ $("#colorDoneBtn").onclick = () => {
   new MutationObserver(layout).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
 
   async function loadLap(name,lap){
-    $("#tvErr").textContent="";
+    stopPlay(); $("#tvErr").textContent="";
     const r=await fetch(`/api/sessions/${encodeURIComponent(name)}/lap/${lap}/trace`);
     const data=await r.json().catch(()=>({}));
-    if(!r.ok){ T=null; $("#tvErr").textContent=data.error||"Could not load lap"; layout(); return; }
-    T=buildT(data); idx=0; layout();
+    if(!r.ok){ T=null; $("#tvPlay").disabled=true; $("#tvPlayInfo").textContent="";
+      $("#tvErr").textContent=data.error||"Could not load lap"; layout(); return; }
+    T=buildT(data); idx=0;
+    $("#tvPlay").disabled=false; $("#tvPlayInfo").textContent="Lap time "+data.lap_time_s.toFixed(3)+" s";
+    layout();
   }
   $("#tvSession").onchange = async () => {
-    const name=$("#tvSession").value; T=null; $("#tvLap").innerHTML=""; layout();
+    const name=$("#tvSession").value; stopPlay(); T=null;
+    $("#tvPlay").disabled=true; $("#tvPlayInfo").textContent=""; $("#tvLap").innerHTML=""; layout();
     if(!name) return;
     const {laps} = await (await fetch(`/api/sessions/${encodeURIComponent(name)}/laps`)).json();
     const usable=(laps||[]).filter(l=>l.complete);

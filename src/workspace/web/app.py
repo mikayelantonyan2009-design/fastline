@@ -129,6 +129,7 @@ def _lap_trace(name, lap):
         brake=(g["brake"] * 100).round(1).tolist(),
         gear=g["gear"].astype(int).tolist(),
         rpm=g["rpm"].astype(int).tolist(),
+        time=(g["lap_time_ms"] / 1000.0).round(3).tolist(),
         lap_time_s=round(float(g["lap_time_ms"].max()) / 1000.0, 3),
         track_len_m=round(float(g["lap_distance_m"].max()), 1),
     )
