@@ -454,16 +454,18 @@ $("#analyzeBtn").onclick = () => {
   const nearCorner=i=>{let best=null,bd=1e9;CORNERS.forEach(c=>{let d=Math.abs(c.idx-i);d=Math.min(d,N-d);if(d<bd){bd=d;best=c;}});return bd<N*0.03?best:null;};
   function readout(){
     if(!T) return;
-    const idx=Math.round(pos)%N;
-    $("#tvSpeed").textContent=Math.round(T.speed[idx]);
+    const i0=Math.floor(pos)%N, i1=(i0+1)%N, f=pos-Math.floor(pos), idx=Math.round(pos)%N;
+    const at=a=>a[i0]+(a[i1]-a[i0])*f;                 // interpolate for smooth live values
+    const sp=at(T.speed);
+    $("#tvSpeed").textContent=Math.round(sp);
     $("#tvGear").textContent=T.gear[idx];
-    $("#tvRpm").textContent=Math.round(T.rpm[idx]);
-    $("#tvDist").textContent=Math.round(T.lineDist[idx])+" / "+Math.round(T.lapLen)+" m";
-    const thr=Math.round(T.thr[idx]),brk=Math.round(T.brk[idx]);
+    $("#tvRpm").textContent=Math.round(at(T.rpm));
+    $("#tvDist").textContent=Math.round(at(T.lineDist))+" / "+Math.round(T.lapLen)+" m";
+    const thr=Math.round(at(T.thr)),brk=Math.round(at(T.brk));
     $("#tvThr").style.width=thr+"%"; $("#tvThrP").textContent=thr+"%";
     $("#tvBrk").style.width=brk+"%"; $("#tvBrkP").textContent=brk+"%";
     const c=nearCorner(idx);
-    $("#tvCorner").innerHTML=c?`Turn ${two(c.t)}${c.name?" · ":""}<b>${c.name||""}</b>`:`<b>${T.speed[idx]>300?"Full throttle":"Between corners"}</b>`;
+    $("#tvCorner").innerHTML=c?`Turn ${two(c.t)}${c.name?" · ":""}<b>${c.name||""}</b>`:`<b>${sp>300?"Full throttle":"Between corners"}</b>`;
   }
   const setPos=p=>{ pos=((p%N)+N)%N; drawFx(); };
 
