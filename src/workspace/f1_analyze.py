@@ -69,14 +69,15 @@ def _select_pass(g):
 
 
 def _forward_only(g):
-    """Keep only forward-progress samples: each point must exceed the furthest
-    distance reached so far. A mid-lap rewind/flashback makes distance jump
-    backwards and re-cover ground already driven; sorting those by distance
-    overlays two drives at the same point (a filled band). Dropping the rewound
-    samples leaves one strictly-increasing, single-line trace."""
+    """Keep the most recent pass over each point: a sample survives only if its
+    distance is less than every distance that comes after it. A rewind/flashback
+    re-covers ground already driven, so this drops the aborted earlier pass —
+    including the slow-down that triggered the flashback — and keeps the clean
+    re-driven line, leaving one strictly-increasing trace with no seam spike."""
     d = g["lap_distance_m"].values
-    prev_peak = np.concatenate(([-np.inf], np.maximum.accumulate(d)[:-1]))
-    return g[d > prev_peak]
+    later_min = np.minimum.accumulate(d[::-1])[::-1]          # later_min[i] = min(d[i:])
+    next_min = np.concatenate((later_min[1:], [np.inf]))      # min of everything after i
+    return g[d < next_min]
 
 
 def get_lap(df, lap_num):
