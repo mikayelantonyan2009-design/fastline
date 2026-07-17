@@ -332,7 +332,7 @@ $("#analyzeBtn").onclick = () => {
     let lo=0,hi=n-1; while(hi-lo>1){const m=(lo+hi)>>1; xs[m]<=x?lo=m:hi=m;}
     const t=(x-xs[lo])/((xs[hi]-xs[lo])||1); return ys[lo]+(ys[hi]-ys[lo])*t; };
 
-  let T=null, idx=0, proj=null;
+  let T=null, pos=0, proj=null;   // pos is a fractional position along the line (smooth marker)
   function buildT(tr){
     const cum=[0];
     for(let i=1;i<N;i++) cum[i]=cum[i-1]+Math.hypot(LINE[i][0]-LINE[i-1][0],LINE[i][1]-LINE[i-1][1]);
@@ -345,8 +345,9 @@ $("#analyzeBtn").onclick = () => {
       speed:map(tr.speed), thr:map(tr.throttle), brk:map(tr.brake),
       rpm:map(tr.rpm), gear:map(tr.gear).map(Math.round) };
   }
-  const timeToIdx=t=>{ const a=T.time; if(t<=a[0])return 0; if(t>=a[N-1])return N-1;
-    let lo=0,hi=N-1; while(hi-lo>1){const m=(lo+hi)>>1; a[m]<=t?lo=m:hi=m;} return lo; };
+  const timeToPos=t=>{ const a=T.time; if(t<=a[0])return 0; if(t>=a[N-1])return N-1;
+    let lo=0,hi=N-1; while(hi-lo>1){const m=(lo+hi)>>1; a[m]<=t?lo=m:hi=m;}
+    const span=a[hi]-a[lo]; return span>0 ? lo+(t-a[lo])/span : lo; };   // fractional
 
   const L={};
   function size(id){ const cv=document.getElementById(id), r=cv.getBoundingClientRect(), dpr=Math.min(2,devicePixelRatio||1);
@@ -440,10 +441,12 @@ $("#analyzeBtn").onclick = () => {
   }
 
   function drawFx(){
-    if(proj){ const {ctx,w,h}=L.tvFx; ctx.clearRect(0,0,w,h); if(T){ const q=proj(LINE[idx]);
-      ctx.beginPath();ctx.arc(q[0],q[1],11,0,7);ctx.fillStyle=sectorColor(idx);ctx.globalAlpha=.3;ctx.fill();ctx.globalAlpha=1;
-      ctx.beginPath();ctx.arc(q[0],q[1],6,0,7);ctx.fillStyle="#fff";ctx.strokeStyle=css("--text");ctx.lineWidth=2.5;ctx.fill();ctx.stroke(); } }
-    if(sg){ const {ctx,w,h}=L.tvStripFx; ctx.clearRect(0,0,w,h); const x=sg.X(idx);
+    if(proj){ const {ctx,w,h}=L.tvFx; ctx.clearRect(0,0,w,h);
+      if(T){ const i0=Math.floor(pos)%N, i1=(i0+1)%N, f=pos-Math.floor(pos), a=LINE[i0], b=LINE[i1];
+        const q=proj([a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f]), sc=sectorColor(Math.round(pos)%N);
+        ctx.beginPath();ctx.arc(q[0],q[1],11,0,7);ctx.fillStyle=sc;ctx.globalAlpha=.3;ctx.fill();ctx.globalAlpha=1;
+        ctx.beginPath();ctx.arc(q[0],q[1],6,0,7);ctx.fillStyle="#fff";ctx.strokeStyle=css("--text");ctx.lineWidth=2.5;ctx.fill();ctx.stroke(); } }
+    if(sg){ const {ctx,w,h}=L.tvStripFx; ctx.clearRect(0,0,w,h); const x=sg.X(pos);
       ctx.strokeStyle=css("--text");ctx.globalAlpha=.55;ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
       ctx.beginPath();ctx.moveTo(x,sg.top);ctx.lineTo(x,sg.bot);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1; }
     readout();
@@ -451,6 +454,7 @@ $("#analyzeBtn").onclick = () => {
   const nearCorner=i=>{let best=null,bd=1e9;CORNERS.forEach(c=>{let d=Math.abs(c.idx-i);d=Math.min(d,N-d);if(d<bd){bd=d;best=c;}});return bd<N*0.03?best:null;};
   function readout(){
     if(!T) return;
+    const idx=Math.round(pos)%N;
     $("#tvSpeed").textContent=Math.round(T.speed[idx]);
     $("#tvGear").textContent=T.gear[idx];
     $("#tvRpm").textContent=Math.round(T.rpm[idx]);
@@ -461,12 +465,13 @@ $("#analyzeBtn").onclick = () => {
     const c=nearCorner(idx);
     $("#tvCorner").innerHTML=c?`Turn ${two(c.t)}${c.name?" · ":""}<b>${c.name||""}</b>`:`<b>${T.speed[idx]>300?"Full throttle":"Between corners"}</b>`;
   }
-  const setIdx=i=>{ idx=((i%N)+N)%N; drawFx(); };
+  const setPos=p=>{ pos=((p%N)+N)%N; drawFx(); };
 
   let drag=null;
   const seekTrack=e=>{ if(!proj||!T)return; const r=$("#tvFx").getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
-    let bi=0,bd=1e18; for(let i=0;i<N;i++){const q=proj(LINE[i]);const d=(q[0]-mx)**2+(q[1]-my)**2;if(d<bd){bd=d;bi=i;}} setIdx(bi); };
-  const seekStrip=e=>{ if(!sg||!T)return; const r=$("#tvStripFx").getBoundingClientRect(); setIdx(Math.round((e.clientX-r.left-sg.padL)/sg.gw*(N-1))); };
+    let bi=0,bd=1e18; for(let i=0;i<N;i++){const q=proj(LINE[i]);const d=(q[0]-mx)**2+(q[1]-my)**2;if(d<bd){bd=d;bi=i;}} setPos(bi); };
+  const seekStrip=e=>{ if(!sg||!T)return; const r=$("#tvStripFx").getBoundingClientRect();
+    setPos(Math.max(0,Math.min(N-1,(e.clientX-r.left-sg.padL)/sg.gw*(N-1)))); };
   function bind(id,which,seek){ const el=$(id);
     el.addEventListener("pointerdown",e=>{stopPlay();drag=which;el.classList.add("grabbing");el.setPointerCapture(e.pointerId);seek(e);});
     el.addEventListener("pointermove",e=>{if(drag===which)seek(e);});
@@ -479,12 +484,12 @@ $("#analyzeBtn").onclick = () => {
   function stopPlay(){ if(!playing && !playRaf) return; playing=false; cancelAnimationFrame(playRaf); playRaf=0; playAnchor=0; $("#tvPlay").textContent="▶ Play lap"; }
   function playFrame(ts){ if(!playing) return; if(!playAnchor) playAnchor=ts;
     const el=playFrom+(ts-playAnchor)/1000;
-    if(el>=T.time[N-1]){ setIdx(N-1); stopPlay(); return; }
-    setIdx(timeToIdx(el)); playRaf=requestAnimationFrame(playFrame); }
+    if(el>=T.time[N-1]){ setPos(N-1); stopPlay(); return; }
+    setPos(timeToPos(el)); playRaf=requestAnimationFrame(playFrame); }
   $("#tvPlay").onclick=()=>{ if(!T) return;
     if(playing){ stopPlay(); return; }
     playing=true; $("#tvPlay").textContent="❚❚ Pause"; playAnchor=0;
-    playFrom=(idx>=N-1)?0:T.time[idx];         // resume from marker, restart if at the line
+    playFrom=(Math.round(pos)>=N-1)?0:T.time[Math.round(pos)];   // resume from marker, restart at the line
     playRaf=requestAnimationFrame(playFrame); };
 
   function layout(){ ["tvBase","tvFx","tvStrip","tvStripFx"].forEach(size); drawTrack(); drawStrip(); drawFx(); }
@@ -498,7 +503,7 @@ $("#analyzeBtn").onclick = () => {
     const data=await r.json().catch(()=>({}));
     if(!r.ok){ T=null; $("#tvPlay").disabled=true; $("#tvPlayInfo").textContent="";
       $("#tvErr").textContent=data.error||"Could not load lap"; layout(); return; }
-    T=buildT(data); idx=0;
+    T=buildT(data); pos=0;
     $("#tvPlay").disabled=false; $("#tvPlayInfo").textContent="Lap time "+data.lap_time_s.toFixed(3)+" s";
     layout();
   }
