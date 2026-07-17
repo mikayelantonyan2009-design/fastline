@@ -22,6 +22,11 @@ import matplotlib.pyplot as plt
 RENDER_DPI = 130          # for the inline web chart
 DEFAULT_COLORS = ("#3671C6", "#FF8000")   # lap1 (blue), lap2 (orange)
 
+# Interlagos corner positions as a fraction of lap distance (from the track geometry)
+CORNER_FRAC = {1: 0.0731, 2: 0.0998, 3: 0.1459, 4: 0.3267, 5: 0.3728, 6: 0.469,
+               7: 0.5035, 8: 0.5495, 9: 0.5686, 10: 0.6261, 11: 0.6872,
+               12: 0.7449, 13: 0.787, 14: 0.8451, 15: 0.9307}
+
 
 def load(csv_path):
     df = pd.read_csv(csv_path)
@@ -69,14 +74,15 @@ def _select_pass(g):
 
 
 def _forward_only(g):
-    """Keep only forward-progress samples: each point must exceed the furthest
-    distance reached so far. A mid-lap rewind/flashback makes distance jump
-    backwards and re-cover ground already driven; sorting those by distance
-    overlays two drives at the same point (a filled band). Dropping the rewound
-    samples leaves one strictly-increasing, single-line trace."""
+    """Keep the most recent pass over each point: a sample survives only if its
+    distance is less than every distance that comes after it. A rewind/flashback
+    re-covers ground already driven, so this drops the aborted earlier pass —
+    including the slow-down that triggered the flashback — and keeps the clean
+    re-driven line, leaving one strictly-increasing trace with no seam spike."""
     d = g["lap_distance_m"].values
-    prev_peak = np.concatenate(([-np.inf], np.maximum.accumulate(d)[:-1]))
-    return g[d > prev_peak]
+    later_min = np.minimum.accumulate(d[::-1])[::-1]          # later_min[i] = min(d[i:])
+    next_min = np.concatenate((later_min[1:], [np.inf]))      # min of everything after i
+    return g[d < next_min]
 
 
 def get_lap(df, lap_num):
@@ -126,7 +132,7 @@ def build_figure(df, lap1_n, lap2_n, color1=DEFAULT_COLORS[0], color2=DEFAULT_CO
     ax[0].plot(B["lap_distance_m"], B["speed_kmh"], label=f"Lap {lap2_n}", color=color2)
     ax[0].set_ylabel("Speed (km/h)")
     ax[0].legend(loc="lower left")
-    ax[0].set_title(f"Lap {lap1_n} vs Lap {lap2_n} - your own telemetry")
+    ax[0].set_title(f"Lap {lap1_n} vs Lap {lap2_n} - your own telemetry", pad=34)
 
     ax[1].plot(d, delta, color="purple")
     ax[1].axhline(0, color="black", lw=0.8)
@@ -155,6 +161,14 @@ def build_figure(df, lap1_n, lap2_n, color1=DEFAULT_COLORS[0], color2=DEFAULT_CO
 
     for a in ax:
         a.grid(alpha=0.25)
+    # turn markers: dashed vertical line at each corner + T# above the top panel
+    track_len = float(A["lap_distance_m"].max())
+    for turn, frac in CORNER_FRAC.items():
+        xc = frac * track_len
+        for a in ax:
+            a.axvline(xc, color="0.5", lw=0.6, ls=(0, (3, 3)), alpha=0.35)
+        ax[0].annotate(f"T{turn}", xy=(xc, 1.01), xycoords=("data", "axes fraction"),
+                       ha="center", va="bottom", fontsize=7, color="0.4")
     fig.tight_layout()
     return fig, {"net_delta": net}
 
