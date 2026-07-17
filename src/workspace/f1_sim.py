@@ -104,18 +104,28 @@ def simulate(dest=("127.0.0.1", PORT), laps=3, hz=120, warmup=0.2,
     time.sleep(warmup)  # give the listener a moment to bind
 
     dt = 1.0 / hz
-    steps_per_lap = int(hz * 8)          # ~8 s per synthetic lap
+    steps_per_lap = int(hz * 8)          # ~8 s of packets per synthetic lap
     session_time = 0.0
     frame = 0
     last_lap_ms = 0
     rows = 0
+
+    # realistic lap-time profile: lap time accrues faster where the car is slow
+    # (time = distance / speed), so the marker accelerates on straights and
+    # slows into the corner. Scaled so the whole lap is ~8 s.
+    step_dist = TRACK_LEN_M / steps_per_lap
+    cum_t = [0.0]
+    for k in range(1, steps_per_lap + 1):
+        cum_t.append(cum_t[-1] + step_dist / max(_sample_at(k / steps_per_lap).speed / 3.6, 1.0))
+    total_t = cum_t[-1] or 1.0
 
     for lap in range(1, laps + 1):
         pace = 1.0 + 0.02 * math.sin(lap)   # each lap a hair different
         for step in range(steps_per_lap + 1):
             frac = step / steps_per_lap
             ctx = _Ctx(session_time, frame, session_uid)
-            sock.sendto(_lap_packet(ctx, _Lap(lap, int(frac * 8000 * pace),
+            lap_ms = int(cum_t[step] / total_t * 8000 * pace)
+            sock.sendto(_lap_packet(ctx, _Lap(lap, lap_ms,
                                               last_lap_ms, frac * TRACK_LEN_M)), dest)
             sock.sendto(_tel_packet(ctx, _sample_at(frac)), dest)
             rows += 1

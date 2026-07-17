@@ -66,9 +66,9 @@
   .color-row { display:flex; align-items:center; justify-content:space-between;
     background:#0d1117; border:1px solid var(--border); border-radius:10px; padding:12px 16px; }
   .color-row span { font-weight:600; }
-  input.swatch { -webkit-appearance:none; appearance:none; width:36px; height:36px;
+  input.swatch { -webkit-appearance:none; appearance:none; width:26px; height:26px;
     border:2px solid var(--border); border-radius:50%; padding:0; cursor:pointer;
-    background:none; }
+    background:none; vertical-align:middle; }
   input.swatch::-webkit-color-swatch-wrapper { padding:0; }
   input.swatch::-webkit-color-swatch { border:none; border-radius:50%; }
   input.swatch::-moz-color-swatch { border:none; border-radius:50%; }
@@ -198,8 +198,10 @@
         <select id="sessionSel"><option value="">— select —</option></select>
       </label>
       <button id="refreshBtn" class="ghost">↻ Refresh</button>
-      <label>Lap A <select id="lapA"></select></label>
-      <label>Lap B <select id="lapB"></select></label>
+      <label>Lap A <select id="lapA"></select>
+        <input type="color" class="swatch" id="cA" value="#3671C6" title="Lap A line color — click to change"></label>
+      <label>Lap B <select id="lapB"></select>
+        <input type="color" class="swatch" id="cB" value="#FF8000" title="Lap B line color — click to change"></label>
       <button id="analyzeBtn" class="primary" disabled>Generate chart</button>
     </div>
     <div id="lapTableWrap"></div>
@@ -207,30 +209,6 @@
     <div class="netdelta" id="netDelta"></div>
     <div class="chart-wrap" id="chartWrap"></div>
   </section>
-
-  <!-- ================= COLOR MODAL ================= -->
-  <div id="colorModal" class="modal-overlay" hidden>
-    <div class="modal">
-      <div id="colorStep1">
-        <h3>Choose your line colors?</h3>
-        <p class="muted">Pick a custom color for each lap, or use the defaults
-          (blue &amp; orange).</p>
-        <div class="row" style="justify-content:flex-end">
-          <button id="colorNoBtn" class="ghost">No, use defaults</button>
-          <button id="colorYesBtn" class="primary">Yes, choose colors</button>
-        </div>
-      </div>
-      <div id="colorStep2" hidden>
-        <h3>Pick your line colors</h3>
-        <p class="muted">Click a circle to open the color picker.</p>
-        <div class="color-rows" id="colorRows"></div>
-        <div class="row" style="justify-content:flex-end">
-          <button id="colorCancelBtn" class="ghost">Cancel</button>
-          <button id="colorDoneBtn" class="primary">Done</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
 </main>
 <script>
@@ -314,8 +292,6 @@ $("#sessionSel").onchange = async () => {
     + `</tbody></table>`;
 };
 
-const DEFAULT_C1 = "#3671C6", DEFAULT_C2 = "#FF8000";   // lap A (blue) / lap B (orange)
-
 async function runAnalyze(colors){
   const name = $("#sessionSel").value; if(!name) return;
   const laps = [parseInt($("#lapA").value), parseInt($("#lapB").value)];
@@ -330,33 +306,10 @@ async function runAnalyze(colors){
   $("#chartWrap").innerHTML = `<img src="${data.image}" alt="telemetry overlay">`;
 }
 
-// ---- color-choice modal ----
-const closeModal = () => { $("#colorModal").hidden = true; };
+// generate straight away, using the per-lap color swatches (default blue/orange)
 $("#analyzeBtn").onclick = () => {
   if(!$("#sessionSel").value) return;
-  $("#colorStep1").hidden = false;
-  $("#colorStep2").hidden = true;
-  $("#colorModal").hidden = false;                 // step 1: ask yes/no
-};
-$("#colorNoBtn").onclick     = () => { closeModal(); runAnalyze(null); };
-$("#colorCancelBtn").onclick = closeModal;
-$("#colorModal").onclick = e => { if(e.target.id === "colorModal") closeModal(); };
-
-$("#colorYesBtn").onclick = () => {
-  const labA = $("#lapA").selectedOptions[0]?.textContent || `Lap ${$("#lapA").value}`;
-  const labB = $("#lapB").selectedOptions[0]?.textContent || `Lap ${$("#lapB").value}`;
-  $("#colorRows").innerHTML =
-    `<div class="color-row"><span>${labA}</span>
-       <input type="color" class="swatch" id="c1" value="${DEFAULT_C1}"></div>
-     <div class="color-row"><span>${labB}</span>
-       <input type="color" class="swatch" id="c2" value="${DEFAULT_C2}"></div>`;
-  $("#colorStep1").hidden = true;
-  $("#colorStep2").hidden = false;                 // step 2: pick colors
-};
-$("#colorDoneBtn").onclick = () => {
-  const colors = {color1: $("#c1").value, color2: $("#c2").value};
-  closeModal();
-  runAnalyze(colors);
+  runAnalyze({color1: $("#cA").value, color2: $("#cB").value});
 };
 
 // ============================ TRACK VIEW ============================
@@ -379,7 +332,7 @@ $("#colorDoneBtn").onclick = () => {
     let lo=0,hi=n-1; while(hi-lo>1){const m=(lo+hi)>>1; xs[m]<=x?lo=m:hi=m;}
     const t=(x-xs[lo])/((xs[hi]-xs[lo])||1); return ys[lo]+(ys[hi]-ys[lo])*t; };
 
-  let T=null, idx=0, proj=null;
+  let T=null, pos=0, proj=null;   // pos is a fractional position along the line (smooth marker)
   function buildT(tr){
     const cum=[0];
     for(let i=1;i<N;i++) cum[i]=cum[i-1]+Math.hypot(LINE[i][0]-LINE[i-1][0],LINE[i][1]-LINE[i-1][1]);
@@ -392,8 +345,9 @@ $("#colorDoneBtn").onclick = () => {
       speed:map(tr.speed), thr:map(tr.throttle), brk:map(tr.brake),
       rpm:map(tr.rpm), gear:map(tr.gear).map(Math.round) };
   }
-  const timeToIdx=t=>{ const a=T.time; if(t<=a[0])return 0; if(t>=a[N-1])return N-1;
-    let lo=0,hi=N-1; while(hi-lo>1){const m=(lo+hi)>>1; a[m]<=t?lo=m:hi=m;} return lo; };
+  const timeToPos=t=>{ const a=T.time; if(t<=a[0])return 0; if(t>=a[N-1])return N-1;
+    let lo=0,hi=N-1; while(hi-lo>1){const m=(lo+hi)>>1; a[m]<=t?lo=m:hi=m;}
+    const span=a[hi]-a[lo]; return span>0 ? lo+(t-a[lo])/span : lo; };   // fractional
 
   const L={};
   function size(id){ const cv=document.getElementById(id), r=cv.getBoundingClientRect(), dpr=Math.min(2,devicePixelRatio||1);
@@ -487,10 +441,12 @@ $("#colorDoneBtn").onclick = () => {
   }
 
   function drawFx(){
-    if(proj){ const {ctx,w,h}=L.tvFx; ctx.clearRect(0,0,w,h); if(T){ const q=proj(LINE[idx]);
-      ctx.beginPath();ctx.arc(q[0],q[1],11,0,7);ctx.fillStyle=sectorColor(idx);ctx.globalAlpha=.3;ctx.fill();ctx.globalAlpha=1;
-      ctx.beginPath();ctx.arc(q[0],q[1],6,0,7);ctx.fillStyle="#fff";ctx.strokeStyle=css("--text");ctx.lineWidth=2.5;ctx.fill();ctx.stroke(); } }
-    if(sg){ const {ctx,w,h}=L.tvStripFx; ctx.clearRect(0,0,w,h); const x=sg.X(idx);
+    if(proj){ const {ctx,w,h}=L.tvFx; ctx.clearRect(0,0,w,h);
+      if(T){ const i0=Math.floor(pos)%N, i1=(i0+1)%N, f=pos-Math.floor(pos), a=LINE[i0], b=LINE[i1];
+        const q=proj([a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f]), sc=sectorColor(Math.round(pos)%N);
+        ctx.beginPath();ctx.arc(q[0],q[1],11,0,7);ctx.fillStyle=sc;ctx.globalAlpha=.3;ctx.fill();ctx.globalAlpha=1;
+        ctx.beginPath();ctx.arc(q[0],q[1],6,0,7);ctx.fillStyle="#fff";ctx.strokeStyle=css("--text");ctx.lineWidth=2.5;ctx.fill();ctx.stroke(); } }
+    if(sg){ const {ctx,w,h}=L.tvStripFx; ctx.clearRect(0,0,w,h); const x=sg.X(pos);
       ctx.strokeStyle=css("--text");ctx.globalAlpha=.55;ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
       ctx.beginPath();ctx.moveTo(x,sg.top);ctx.lineTo(x,sg.bot);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1; }
     readout();
@@ -498,22 +454,26 @@ $("#colorDoneBtn").onclick = () => {
   const nearCorner=i=>{let best=null,bd=1e9;CORNERS.forEach(c=>{let d=Math.abs(c.idx-i);d=Math.min(d,N-d);if(d<bd){bd=d;best=c;}});return bd<N*0.03?best:null;};
   function readout(){
     if(!T) return;
-    $("#tvSpeed").textContent=Math.round(T.speed[idx]);
+    const i0=Math.floor(pos)%N, i1=(i0+1)%N, f=pos-Math.floor(pos), idx=Math.round(pos)%N;
+    const at=a=>a[i0]+(a[i1]-a[i0])*f;                 // interpolate for smooth live values
+    const sp=at(T.speed);
+    $("#tvSpeed").textContent=Math.round(sp);
     $("#tvGear").textContent=T.gear[idx];
-    $("#tvRpm").textContent=Math.round(T.rpm[idx]);
-    $("#tvDist").textContent=Math.round(T.lineDist[idx])+" / "+Math.round(T.lapLen)+" m";
-    const thr=Math.round(T.thr[idx]),brk=Math.round(T.brk[idx]);
+    $("#tvRpm").textContent=Math.round(at(T.rpm));
+    $("#tvDist").textContent=Math.round(at(T.lineDist))+" / "+Math.round(T.lapLen)+" m";
+    const thr=Math.round(at(T.thr)),brk=Math.round(at(T.brk));
     $("#tvThr").style.width=thr+"%"; $("#tvThrP").textContent=thr+"%";
     $("#tvBrk").style.width=brk+"%"; $("#tvBrkP").textContent=brk+"%";
     const c=nearCorner(idx);
-    $("#tvCorner").innerHTML=c?`Turn ${two(c.t)}${c.name?" · ":""}<b>${c.name||""}</b>`:`<b>${T.speed[idx]>300?"Full throttle":"Between corners"}</b>`;
+    $("#tvCorner").innerHTML=c?`Turn ${two(c.t)}${c.name?" · ":""}<b>${c.name||""}</b>`:`<b>${sp>300?"Full throttle":"Between corners"}</b>`;
   }
-  const setIdx=i=>{ idx=((i%N)+N)%N; drawFx(); };
+  const setPos=p=>{ pos=((p%N)+N)%N; drawFx(); };
 
   let drag=null;
   const seekTrack=e=>{ if(!proj||!T)return; const r=$("#tvFx").getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
-    let bi=0,bd=1e18; for(let i=0;i<N;i++){const q=proj(LINE[i]);const d=(q[0]-mx)**2+(q[1]-my)**2;if(d<bd){bd=d;bi=i;}} setIdx(bi); };
-  const seekStrip=e=>{ if(!sg||!T)return; const r=$("#tvStripFx").getBoundingClientRect(); setIdx(Math.round((e.clientX-r.left-sg.padL)/sg.gw*(N-1))); };
+    let bi=0,bd=1e18; for(let i=0;i<N;i++){const q=proj(LINE[i]);const d=(q[0]-mx)**2+(q[1]-my)**2;if(d<bd){bd=d;bi=i;}} setPos(bi); };
+  const seekStrip=e=>{ if(!sg||!T)return; const r=$("#tvStripFx").getBoundingClientRect();
+    setPos(Math.max(0,Math.min(N-1,(e.clientX-r.left-sg.padL)/sg.gw*(N-1)))); };
   function bind(id,which,seek){ const el=$(id);
     el.addEventListener("pointerdown",e=>{stopPlay();drag=which;el.classList.add("grabbing");el.setPointerCapture(e.pointerId);seek(e);});
     el.addEventListener("pointermove",e=>{if(drag===which)seek(e);});
@@ -526,12 +486,12 @@ $("#colorDoneBtn").onclick = () => {
   function stopPlay(){ if(!playing && !playRaf) return; playing=false; cancelAnimationFrame(playRaf); playRaf=0; playAnchor=0; $("#tvPlay").textContent="▶ Play lap"; }
   function playFrame(ts){ if(!playing) return; if(!playAnchor) playAnchor=ts;
     const el=playFrom+(ts-playAnchor)/1000;
-    if(el>=T.time[N-1]){ setIdx(N-1); stopPlay(); return; }
-    setIdx(timeToIdx(el)); playRaf=requestAnimationFrame(playFrame); }
+    if(el>=T.time[N-1]){ setPos(N-1); stopPlay(); return; }
+    setPos(timeToPos(el)); playRaf=requestAnimationFrame(playFrame); }
   $("#tvPlay").onclick=()=>{ if(!T) return;
     if(playing){ stopPlay(); return; }
     playing=true; $("#tvPlay").textContent="❚❚ Pause"; playAnchor=0;
-    playFrom=(idx>=N-1)?0:T.time[idx];         // resume from marker, restart if at the line
+    playFrom=(Math.round(pos)>=N-1)?0:T.time[Math.round(pos)];   // resume from marker, restart at the line
     playRaf=requestAnimationFrame(playFrame); };
 
   function layout(){ ["tvBase","tvFx","tvStrip","tvStripFx"].forEach(size); drawTrack(); drawStrip(); drawFx(); }
@@ -545,7 +505,7 @@ $("#colorDoneBtn").onclick = () => {
     const data=await r.json().catch(()=>({}));
     if(!r.ok){ T=null; $("#tvPlay").disabled=true; $("#tvPlayInfo").textContent="";
       $("#tvErr").textContent=data.error||"Could not load lap"; layout(); return; }
-    T=buildT(data); idx=0;
+    T=buildT(data); pos=0;
     $("#tvPlay").disabled=false; $("#tvPlayInfo").textContent="Lap time "+data.lap_time_s.toFixed(3)+" s";
     layout();
   }
