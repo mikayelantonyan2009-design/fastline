@@ -36,6 +36,42 @@ def _session_track(csv_path):
     return None
 
 
+def _clean_label(val):
+    """A friendly session name: trimmed, printable-only, length-capped."""
+    if not isinstance(val, str):
+        return None
+    s = "".join(ch for ch in val.strip() if ch.isprintable())[:60]
+    return s or None
+
+
+def _session_name(csv_path):
+    """Read the user-given name for a session, if any."""
+    meta = csv_path.with_suffix(".name")
+    if meta.is_file():
+        try:
+            return _clean_label(meta.read_text())
+        except OSError:
+            pass
+    return None
+
+
+def _set_session_name(name, body):
+    """Save (or clear) a friendly name for a session as a .name sidecar."""
+    p = _safe_csv(name)
+    if p is None:
+        return jsonify(error="No such session"), 404
+    label = _clean_label(body.get("name"))
+    meta = p.with_suffix(".name")
+    try:
+        if label:
+            meta.write_text(label)
+        elif meta.exists():
+            meta.unlink()
+    except OSError as e:
+        return jsonify(error=str(e)), 500
+    return jsonify(ok=True, label=label)
+
+
 def sessions_dir():
     return Path(os.environ.get("WORKSPACE_SESSIONS_DIR",
                                Path.cwd() / "sessions")).resolve()
@@ -81,7 +117,8 @@ def _list_sessions():
     for p in sorted(sessions_dir().glob("f1_session_*.csv"), reverse=True):
         stat = p.stat()
         out.append({"name": p.name, "size": stat.st_size,
-                    "modified": int(stat.st_mtime), "track": _session_track(p)})
+                    "modified": int(stat.st_mtime), "track": _session_track(p),
+                    "label": _session_name(p)})
     return jsonify(out)
 
 
@@ -154,10 +191,8 @@ def _lap_trace(name, lap):
     )
 
 
-def create_app():
-    app = Flask(__name__)
+def _record_routes(app, recorder):
     templates = Path(__file__).parent / "templates"
-    recorder = Recorder(sessions_dir())
 
     @app.get("/")
     def index():
@@ -179,6 +214,8 @@ def create_app():
     def record_demo():
         return _start_demo(recorder, request.json or {})
 
+
+def _session_routes(app):
     @app.get("/api/sessions")
     def list_sessions():
         return _list_sessions()
@@ -195,6 +232,16 @@ def create_app():
     def lap_trace(name, lap):
         return _lap_trace(name, lap)
 
+    @app.post("/api/sessions/<name>/name")
+    def session_name(name):
+        return _set_session_name(name, request.json or {})
+
+
+def create_app():
+    app = Flask(__name__)
+    recorder = Recorder(sessions_dir())
+    _record_routes(app, recorder)
+    _session_routes(app)
     return app
 
 
