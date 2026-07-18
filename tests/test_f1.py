@@ -195,3 +195,30 @@ def test_record_start_ignores_bad_track(tmp_path, monkeypatch):
     assert r.status_code == 200
     client.post("/api/record/stop")
     assert not list(tmp_path.glob("*.track"))
+
+
+def test_session_rename(tmp_path, monkeypatch):
+    """A friendly name can be saved for a session, shows in the listing, and an
+    empty name clears it; unknown sessions 404."""
+    monkeypatch.setenv("WORKSPACE_SESSIONS_DIR", str(tmp_path))
+    port = _free_udp_port()
+    rec = Recorder(tmp_path)
+    rec.start(port=port)
+    f1_sim.simulate(dest=("127.0.0.1", port), laps=3, hz=240, warmup=0.3)
+    time.sleep(0.3)
+    rec.stop()
+
+    from workspace.web.app import create_app
+    client = create_app().test_client()
+    name = client.get("/api/sessions").get_json()[0]["name"]
+
+    r = client.post(f"/api/sessions/{name}/name", json={"name": "Quali run"})
+    assert r.status_code == 200 and r.get_json()["label"] == "Quali run"
+    row = next(s for s in client.get("/api/sessions").get_json() if s["name"] == name)
+    assert row["label"] == "Quali run"
+
+    client.post(f"/api/sessions/{name}/name", json={"name": ""})   # clear
+    row = next(s for s in client.get("/api/sessions").get_json() if s["name"] == name)
+    assert row["label"] is None
+    assert client.post("/api/sessions/nope.csv/name",
+                       json={"name": "x"}).status_code == 404

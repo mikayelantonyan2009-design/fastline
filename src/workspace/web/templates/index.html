@@ -162,6 +162,7 @@
         <select id="tvSession"><option value="">— select —</option></select>
       </label>
       <button id="tvRefresh" class="ghost">↻ Refresh</button>
+      <button id="tvRename" class="ghost">✎ Name</button>
       <label>Lap <select id="tvLap"></select></label>
     </div>
     <div id="tvErr" class="err"></div>
@@ -214,6 +215,9 @@
         <select id="sessionSel"><option value="">— select —</option></select>
       </label>
       <button id="refreshBtn" class="ghost">↻ Refresh</button>
+      <button id="renameBtn" class="ghost">✎ Name</button>
+    </div>
+    <div class="row" style="margin-top:12px">
       <label>Lap A <select id="lapA"></select>
         <input type="color" class="swatch" id="cA" value="#3671C6" title="Lap A line color — click to change"></label>
       <label>Lap B <select id="lapB"></select>
@@ -223,6 +227,7 @@
     <div id="lapTableWrap"></div>
     <div id="analyzeErr" class="err"></div>
     <div class="netdelta" id="netDelta"></div>
+    <button id="saveChartBtn" class="ghost" hidden style="margin-top:8px">⭳ Save chart</button>
     <div class="chart-wrap" id="chartWrap"></div>
   </section>
 
@@ -240,8 +245,12 @@
 
 <script>
 const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmtMs = ms => { if(!ms) return "—"; const s=ms/1000, m=Math.floor(s/60);
   return m>0 ? `${m}:${(s-m*60).toFixed(3).padStart(6,'0')}` : `${s.toFixed(3)}s`; };
+// lap time in seconds -> m:ss.sss (F1 style); sub-minute stays as ss.sss
+const fmtLap = s => { if(s==null) return "—"; const m=Math.floor(s/60);
+  return m>0 ? `${m}:${(s-m*60).toFixed(3).padStart(6,'0')}` : s.toFixed(3); };
 
 $("#hostinfo").textContent = location.host;
 
@@ -307,9 +316,10 @@ setInterval(pollStatus, 1000); pollStatus();
 // ---- sessions & analysis --------------------------------------------
 async function loadSessions(){
   const list = await (await fetch("/api/sessions")).json();
-  window.__sessTrack = {}; list.forEach(s => { window.__sessTrack[s.name] = s.track||null; });
+  window.__sessTrack = {}; window.__sessLabel = {};
+  list.forEach(s => { window.__sessTrack[s.name] = s.track||null; window.__sessLabel[s.name] = s.label||null; });
   const opts = '<option value="">— select —</option>' +
-    list.map(s=>`<option value="${s.name}">${s.name}</option>`).join("");
+    list.map(s=>`<option value="${s.name}">${s.label ? esc(s.label) : s.name}</option>`).join("");
   for(const id of ["#sessionSel","#tvSession"]){
     const sel = $(id); const cur = sel.value;
     sel.innerHTML = opts;
@@ -317,17 +327,30 @@ async function loadSessions(){
   }
 }
 $("#refreshBtn").onclick = loadSessions;
+$("#saveChartBtn").onclick = () => { const c=window.__lastChart; if(!c) return;
+  const a=document.createElement("a"); a.href=c.url; a.download=c.file; a.click(); };
+async function renameSession(sel){
+  const name=$(sel).value; if(!name){ alert("Pick a session first."); return; }
+  const cur=(window.__sessLabel&&window.__sessLabel[name])||"";
+  const label=prompt("Name this session (leave blank to clear):", cur);
+  if(label===null) return;
+  const {ok,data}=await post(`/api/sessions/${encodeURIComponent(name)}/name`,{name:label});
+  if(!ok){ alert(data.error||"Could not rename"); return; }
+  await loadSessions();
+}
+$("#renameBtn").onclick = () => renameSession("#sessionSel");
+$("#tvRename").onclick = () => renameSession("#tvSession");
 
 $("#sessionSel").onchange = async () => {
   const name = $("#sessionSel").value;
-  $("#chartWrap").innerHTML=""; $("#netDelta").textContent=""; $("#analyzeErr").textContent="";
+  $("#chartWrap").innerHTML=""; $("#netDelta").textContent=""; $("#analyzeErr").textContent=""; $("#saveChartBtn").hidden=true;
   $("#lapTableWrap").innerHTML=""; $("#lapA").innerHTML=""; $("#lapB").innerHTML="";
   $("#analyzeBtn").disabled = !name;
   if(!name) return;
   const {laps} = await (await fetch(`/api/sessions/${encodeURIComponent(name)}/laps`)).json();
   if(!laps || !laps.length){ $("#lapTableWrap").innerHTML='<p class="muted">No lap data.</p>'; return; }
   // lap picker options
-  const opts = laps.map(l=>`<option value="${l.lap}">Lap ${l.lap} — ${l.time_s.toFixed(3)}s${l.complete?"":" (partial)"}</option>`).join("");
+  const opts = laps.map(l=>`<option value="${l.lap}">Lap ${l.lap} — ${fmtLap(l.time_s)}${l.complete?"":" (partial)"}</option>`).join("");
   $("#lapA").innerHTML = opts; $("#lapB").innerHTML = opts;
   const complete = laps.filter(l=>l.complete);   // laps are sorted fastest-first
   if(complete.length>=2){ $("#lapA").value=complete[0].lap; $("#lapB").value=complete[1].lap; }
@@ -335,14 +358,14 @@ $("#sessionSel").onchange = async () => {
   // summary table
   $("#lapTableWrap").innerHTML =
     `<table><thead><tr><th>Lap</th><th>Time</th><th>Samples</th><th>Complete</th></tr></thead><tbody>`
-    + laps.map((l,i)=>`<tr class="${i===0?'fast':''}"><td>${l.lap}</td><td>${l.time_s.toFixed(3)}s</td><td>${l.samples}</td><td>${l.complete?'✓':'—'}</td></tr>`).join("")
+    + laps.map((l,i)=>`<tr class="${i===0?'fast':''}"><td>${l.lap}</td><td>${fmtLap(l.time_s)}</td><td>${l.samples}</td><td>${l.complete?'✓':'—'}</td></tr>`).join("")
     + `</tbody></table>`;
 };
 
 async function runAnalyze(colors){
   const name = $("#sessionSel").value; if(!name) return;
   const laps = [parseInt($("#lapA").value), parseInt($("#lapB").value)];
-  $("#analyzeErr").textContent=""; $("#netDelta").textContent="";
+  $("#analyzeErr").textContent=""; $("#netDelta").textContent=""; $("#saveChartBtn").hidden=true;
   $("#chartWrap").innerHTML='<p class="muted">Rendering…</p>';
   const body = {laps};
   if(colors) body.colors = colors;
@@ -351,6 +374,9 @@ async function runAnalyze(colors){
   const sign = data.net_delta>=0?"+":"";
   $("#netDelta").innerHTML = `Net delta at line: <span style="color:${data.net_delta>=0?'var(--orange)':'var(--green)'}">${sign}${data.net_delta.toFixed(3)}s</span> &nbsp;<span class="muted">(Lap ${data.lap2} vs Lap ${data.lap1})</span>`;
   $("#chartWrap").innerHTML = `<img src="${data.image}" alt="telemetry overlay">`;
+  const lbl=(window.__sessLabel&&window.__sessLabel[name])||name.replace(/\.csv$/,"");
+  window.__lastChart={url:data.image, file:lbl.replace(/[^\w.-]+/g,"_")+`_lap${data.lap1}_vs_lap${data.lap2}.png`};
+  $("#saveChartBtn").hidden=false;
 }
 
 // generate straight away, using the per-lap color swatches (default blue/orange)
@@ -635,7 +661,7 @@ $("#analyzeBtn").onclick = () => {
     if(!r.ok){ T=null; $("#tvPlay").disabled=true; $("#tvPlayInfo").textContent="";
       $("#tvErr").textContent=data.error||"Could not load lap"; layout(); return; }
     T=buildT(data); pos=0;
-    $("#tvPlay").disabled=false; $("#tvPlayInfo").textContent="Lap time "+data.lap_time_s.toFixed(3)+" s";
+    $("#tvPlay").disabled=false; $("#tvPlayInfo").textContent="Lap time "+fmtLap(data.lap_time_s);
     layout();
   }
   $("#tvSession").onchange = async () => {
@@ -647,7 +673,7 @@ $("#analyzeBtn").onclick = () => {
     const usable=(laps||[]).filter(l=>l.complete);
     const list=usable.length?usable:(laps||[]);
     if(!list.length){ $("#tvErr").textContent="No usable laps in this session."; return; }
-    $("#tvLap").innerHTML=list.map(l=>`<option value="${l.lap}">Lap ${l.lap} — ${l.time_s.toFixed(3)}s${l.complete?"":" (partial)"}</option>`).join("");
+    $("#tvLap").innerHTML=list.map(l=>`<option value="${l.lap}">Lap ${l.lap} — ${fmtLap(l.time_s)}${l.complete?"":" (partial)"}</option>`).join("");
     loadLap(name,list[0].lap);
   };
   $("#tvLap").onchange = () => { const n=$("#tvSession").value; if(n) loadLap(n,parseInt($("#tvLap").value)); };
