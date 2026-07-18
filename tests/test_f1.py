@@ -139,3 +139,59 @@ def test_pick_laps_needs_two_complete():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_session_remembers_track(tmp_path, monkeypatch):
+    """Recording with a chosen circuit writes a .track sidecar, and the sessions
+    listing surfaces it so the viewer can reopen with the right map."""
+    monkeypatch.setenv("WORKSPACE_SESSIONS_DIR", str(tmp_path))
+    port = _free_udp_port()
+    rec = Recorder(tmp_path)
+    assert rec.start(port=port, track="ae-2009") is True
+    f1_sim.simulate(dest=("127.0.0.1", port), laps=3, hz=240, warmup=0.3)
+    time.sleep(0.3)
+    rec.stop()
+
+    csvs = list(tmp_path.glob("f1_session_*.csv"))
+    assert len(csvs) == 1
+    meta = csvs[0].with_suffix(".track")
+    assert meta.is_file() and meta.read_text() == "ae-2009"
+
+    from workspace.web.app import create_app
+    client = create_app().test_client()
+    row = next(s for s in client.get("/api/sessions").get_json()
+               if s["name"] == csvs[0].name)
+    assert row["track"] == "ae-2009"
+
+
+def test_record_endpoint_saves_track(tmp_path, monkeypatch):
+    """Full path: /api/record/start with a track -> record -> stop -> the session
+    lists that track (this is exactly what the track picker drives)."""
+    monkeypatch.setenv("WORKSPACE_SESSIONS_DIR", str(tmp_path))
+    from workspace.web.app import create_app
+    client = create_app().test_client()
+    port = _free_udp_port()
+    assert client.post("/api/record/start",
+                       json={"port": port, "track": "ae-2009"}).status_code == 200
+    f1_sim.simulate(dest=("127.0.0.1", port), laps=3, hz=240, warmup=0.3)
+    time.sleep(0.3)
+    client.post("/api/record/stop")
+
+    csvs = list(tmp_path.glob("f1_session_*.csv"))
+    assert len(csvs) == 1
+    assert csvs[0].with_suffix(".track").read_text() == "ae-2009"
+    row = next(s for s in client.get("/api/sessions").get_json()
+               if s["name"] == csvs[0].name)
+    assert row["track"] == "ae-2009"
+
+
+def test_record_start_ignores_bad_track(tmp_path, monkeypatch):
+    """A malformed track id is dropped, not persisted — recording still starts."""
+    monkeypatch.setenv("WORKSPACE_SESSIONS_DIR", str(tmp_path))
+    from workspace.web.app import create_app
+    client = create_app().test_client()
+    r = client.post("/api/record/start",
+                    json={"port": _free_udp_port(), "track": "../evil"})
+    assert r.status_code == 200
+    client.post("/api/record/stop")
+    assert not list(tmp_path.glob("*.track"))
