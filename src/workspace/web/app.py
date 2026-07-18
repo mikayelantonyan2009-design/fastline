@@ -17,6 +17,23 @@ from ..f1_logger import PORT
 from ..recorder import Recorder
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+_TRACK_ID = re.compile(r"^[a-z0-9-]{1,40}$")
+
+
+def _clean_track(val):
+    """Accept only a simple slug for the circuit id; anything else -> None."""
+    return val if isinstance(val, str) and _TRACK_ID.match(val) else None
+
+
+def _session_track(csv_path):
+    """Read the circuit id recorded alongside a session, if any."""
+    meta = csv_path.with_suffix(".track")
+    if meta.is_file():
+        try:
+            return _clean_track(meta.read_text().strip())
+        except OSError:
+            pass
+    return None
 
 
 def sessions_dir():
@@ -64,7 +81,7 @@ def _list_sessions():
     for p in sorted(sessions_dir().glob("f1_session_*.csv"), reverse=True):
         stat = p.stat()
         out.append({"name": p.name, "size": stat.st_size,
-                    "modified": int(stat.st_mtime)})
+                    "modified": int(stat.st_mtime), "track": _session_track(p)})
     return jsonify(out)
 
 
@@ -105,8 +122,10 @@ def _analyze(name, body):
 
 
 def _record_start(recorder, req):
-    port = int(req.json.get("port", PORT)) if req.is_json else PORT
-    if not recorder.start(port=port):
+    body = req.json if req.is_json else {}
+    port = int(body.get("port", PORT))
+    track = _clean_track(body.get("track"))
+    if not recorder.start(port=port, track=track):
         return jsonify(error="Already recording"), 409
     return jsonify(recorder.status())
 

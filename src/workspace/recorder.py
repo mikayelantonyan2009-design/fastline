@@ -32,13 +32,15 @@ class Recorder:
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self._thread = None
         self._stop = None
+        self._track = None
         self._lock = threading.Lock()
         self._status = LiveStatus(_idle_status())
 
-    def start(self, port=f1_logger.PORT):
+    def start(self, port=f1_logger.PORT, track=None):
         with self._lock:
             if self._status.get("recording"):
                 return False
+            self._track = track
             self._status = LiveStatus({**_idle_status(), "recording": True,
                                        "message": "Waiting for packets…",
                                        "started_at": time.time(), "port": port})
@@ -47,6 +49,17 @@ class Recorder:
         self._thread.start()
         return True
 
+    def _write_track_meta(self):
+        """Persist which circuit this session was recorded at, as a sidecar next
+        to the CSV, so the viewer can pick the right map when it's reopened."""
+        fname = self._status.get("session_file")
+        if not (fname and self._track):
+            return
+        try:
+            (self.out_dir / fname).with_suffix(".track").write_text(self._track)
+        except OSError:
+            pass
+
     def _run(self, port):
         try:
             f1_logger.record_session(self.out_dir, self._stop, port=port,
@@ -54,6 +67,7 @@ class Recorder:
         except Exception as exc:  # surface bind errors etc. to the UI
             self._status.update(message=f"Error: {exc}")
         finally:
+            self._write_track_meta()
             msg = self._status.get("message", "")
             self._status.update(recording=False,
                                 message=msg if msg.startswith("Error") else "Stopped")

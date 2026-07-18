@@ -72,6 +72,22 @@
   input.swatch::-webkit-color-swatch-wrapper { padding:0; }
   input.swatch::-webkit-color-swatch { border:none; border-radius:50%; }
   input.swatch::-moz-color-swatch { border:none; border-radius:50%; }
+  /* ---- track picker ---- */
+  .tp-modal { width:min(760px,94vw); }
+  .tp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+    gap:14px; margin-top:18px; }
+  .tp-card { background:#0d1117; border:1px solid var(--border); border-radius:12px;
+    overflow:hidden; cursor:pointer; transition:.14s; text-align:left; padding:0; color:var(--text); }
+  .tp-card:hover:not(:disabled) { border-color:var(--red); transform:translateY(-2px); }
+  .tp-head { display:flex; align-items:center; gap:8px; padding:11px 13px 4px; }
+  .tp-head .fl { font-size:16px; line-height:1; }
+  .tp-head .nm { font-size:13px; font-weight:700; }
+  .tp-map { position:relative; width:100%; aspect-ratio:1.4/1; }
+  .tp-map canvas { position:absolute; inset:0; width:100%; height:100%; }
+  .tp-foot { display:flex; justify-content:space-between; padding:8px 13px 12px;
+    color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+  .tp-foot b { color:var(--text); font-weight:600; }
+  .tp-cancel { margin-top:18px; }
   /* ---- track view ---- */
   .tv-stage { display:grid; grid-template-columns:1.6fr 1fr; gap:16px; align-items:start; }
   @media (max-width:820px){ .tv-stage { grid-template-columns:1fr; } }
@@ -140,7 +156,7 @@
 
   <!-- ================= TRACK VIEW ================= -->
   <section class="panel">
-    <h2>Track view — Interlagos</h2>
+    <h2>Track view — <span id="tvTrackName">Interlagos</span></h2>
     <div class="row">
       <label>Session
         <select id="tvSession"><option value="">— select —</option></select>
@@ -211,6 +227,17 @@
   </section>
 
 </main>
+
+<!-- ================= TRACK PICKER ================= -->
+<div class="modal-overlay" id="tpOverlay" hidden>
+  <div class="modal tp-modal">
+    <h3>Select a track</h3>
+    <p class="muted">Choose the circuit you're recording at — it sets the map for this session.</p>
+    <div class="tp-grid" id="tpGrid"></div>
+    <button class="ghost tp-cancel" id="tpCancel">Cancel</button>
+  </div>
+</div>
+
 <script>
 const $ = s => document.querySelector(s);
 const fmtMs = ms => { if(!ms) return "—"; const s=ms/1000, m=Math.floor(s/60);
@@ -224,11 +251,30 @@ async function post(url, body){
     body:JSON.stringify(body||{})});
   return {ok:r.ok, data: await r.json().catch(()=>({}))};
 }
-$("#startBtn").onclick = async () => {
+$("#startBtn").onclick = () => openTrackPicker();
+function buildPicker(){
+  const grid=$("#tpGrid"); grid.innerHTML="";
+  window.TrackView.list().forEach(tr=>{
+    const card=document.createElement("button"); card.className="tp-card"; card.type="button";
+    card.innerHTML=`<div class="tp-head"><span class="fl">${tr.flag}</span><span class="nm">${tr.name}</span></div>`
+      +`<div class="tp-map"><canvas></canvas></div>`
+      +`<div class="tp-foot"><span>${tr.country}</span><span><b>${tr.turns}</b> turns · <b>${(tr.len/1000).toFixed(3)}</b> km</span></div>`;
+    card.onclick=()=>chooseTrack(tr.id);
+    grid.appendChild(card);
+    requestAnimationFrame(()=>window.TrackView.drawMini(card.querySelector("canvas"),tr));
+  });
+}
+function openTrackPicker(){ $("#tpOverlay").hidden=false; buildPicker(); }
+function closeTrackPicker(){ $("#tpOverlay").hidden=true; }
+$("#tpCancel").onclick = closeTrackPicker;
+$("#tpOverlay").onclick = e => { if(e.target.id==="tpOverlay") closeTrackPicker(); };
+async function chooseTrack(id){
+  closeTrackPicker();
+  window.TrackView.setActive(id);
   const port = parseInt($("#portInput").value)||20777;
-  const {ok,data} = await post("/api/record/start",{port});
-  if(!ok){ alert(data.error||"Could not start"); return; }
-};
+  const {ok,data} = await post("/api/record/start",{port, track:id});
+  if(!ok){ alert(data.error||"Could not start"); }
+}
 $("#stopBtn").onclick = async () => {
   await post("/api/record/stop");
   loadSessions();          // a new CSV should now be available
@@ -261,6 +307,7 @@ setInterval(pollStatus, 1000); pollStatus();
 // ---- sessions & analysis --------------------------------------------
 async function loadSessions(){
   const list = await (await fetch("/api/sessions")).json();
+  window.__sessTrack = {}; list.forEach(s => { window.__sessTrack[s.name] = s.track||null; });
   const opts = '<option value="">— select —</option>' +
     list.map(s=>`<option value="${s.name}">${s.name}</option>`).join("");
   for(const id of ["#sessionSel","#tvSession"]){
@@ -316,14 +363,26 @@ $("#analyzeBtn").onclick = () => {
 (() => {
   const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
   // real Interlagos centerline (vector geometry), ordered anticlockwise from S/F
-  const LINE=[[496.6,214.6],[480.4,218.9],[464.2,223.4],[448.1,227.9],[431.9,232.4],[415.8,236.9],[399.6,241.4],[383.4,245.9],[367.3,250.4],[351.1,254.9],[335.0,259.4],[318.8,264.0],[302.6,268.5],[286.5,273.0],[270.3,277.5],[254.2,282.0],[238.0,286.5],[222.2,291.9],[207.6,300.1],[193.9,309.7],[184.5,323.3],[182.5,339.6],[187.7,355.5],[199.0,367.8],[211.0,379.4],[223.7,390.4],[233.3,403.9],[235.3,420.2],[229.5,435.9],[221.0,450.3],[213.1,465.1],[207.0,480.7],[202.6,496.9],[200.1,513.4],[199.3,530.2],[201.3,546.8],[204.7,563.2],[210.0,579.1],[217.2,594.2],[226.2,608.3],[236.8,621.3],[248.8,633.0],[261.9,643.4],[276.1,652.3],[291.1,659.8],[306.8,665.7],[322.9,670.3],[339.1,674.9],[355.2,679.4],[371.3,684.0],[387.5,688.5],[403.7,692.9],[420.0,696.7],[436.3,700.5],[452.7,704.4],[469.0,708.3],[485.3,712.1],[501.7,716.0],[518.0,719.8],[534.3,723.6],[550.7,727.3],[567.1,731.0],[583.4,734.7],[599.8,738.4],[616.1,742.1],[632.5,745.8],[648.8,749.8],[665.1,753.8],[681.4,757.7],[697.7,761.7],[714.0,765.6],[730.3,769.6],[746.6,773.6],[762.9,777.5],[779.2,781.5],[795.5,785.4],[811.8,789.4],[828.1,793.3],[844.4,797.3],[860.7,801.3],[877.0,805.2],[893.3,809.2],[909.6,813.2],[926.0,816.4],[942.7,815.7],[957.4,808.0],[967.6,794.9],[973.4,779.2],[976.5,762.7],[979.4,746.2],[982.3,729.6],[985.3,713.1],[987.5,696.5],[988.6,679.8],[986.7,663.1],[983.3,646.8],[977.0,631.3],[968.2,617.0],[958.6,603.3],[947.0,591.2],[934.2,580.4],[920.8,570.3],[907.3,560.4],[893.6,550.7],[880.0,541.0],[866.3,531.2],[852.6,521.5],[838.9,511.8],[825.1,502.3],[811.2,492.9],[797.4,483.5],[783.5,474.1],[769.6,464.7],[755.7,455.3],[741.8,445.8],[728.3,435.9],[714.7,426.0],[701.2,416.1],[687.4,406.6],[673.6,397.0],[660.0,387.2],[648.2,375.5],[640.7,360.5],[637.0,344.3],[636.2,327.6],[637.0,310.8],[640.2,294.4],[645.9,278.7],[653.5,263.7],[662.9,249.9],[675.7,239.4],[691.0,232.5],[707.1,227.8],[723.3,223.6],[739.6,219.7],[756.0,216.3],[772.6,213.4],[789.1,210.5],[805.8,209.0],[822.5,209.0],[837.8,215.1],[846.5,229.1],[845.5,245.6],[837.8,260.3],[827.9,273.8],[819.4,288.2],[815.5,304.4],[817.9,320.8],[826.8,334.8],[839.6,345.3],[855.4,350.5],[872.1,349.6],[887.0,342.5],[900.4,332.4],[912.0,320.3],[923.5,308.0],[935.0,295.8],[947.2,284.3],[960.0,273.5],[973.9,264.2],[989.5,258.1],[1005.6,253.4],[1021.9,249.4],[1038.4,246.2],[1055.0,244.3],[1071.1,247.5],[1082.2,258.9],[1082.1,275.2],[1071.8,288.0],[1059.5,299.3],[1047.1,310.6],[1034.7,321.9],[1022.5,333.4],[1010.3,344.9],[998.4,356.7],[988.8,370.4],[982.0,385.7],[978.5,402.1],[977.0,418.8],[978.1,435.5],[981.4,451.9],[987.7,467.3],[996.7,481.5],[1007.6,494.3],[1020.9,504.3],[1034.8,513.8],[1049.1,522.5],[1063.4,531.3],[1077.8,539.9],[1092.4,548.2],[1106.9,556.5],[1121.5,564.9],[1136.0,573.4],[1150.4,581.9],[1164.8,590.5],[1179.7,598.1],[1196.0,597.0],[1209.1,587.0],[1216.9,572.2],[1222.8,556.5],[1228.3,540.7],[1233.9,524.9],[1239.5,509.1],[1245.1,493.2],[1248.3,476.8],[1247.4,460.1],[1245.0,443.5],[1241.9,427.0],[1238.2,410.7],[1234.3,394.4],[1230.5,378.0],[1224.9,362.2],[1218.2,346.9],[1211.4,331.5],[1203.3,316.6],[1195.3,301.7],[1187.2,286.7],[1179.2,271.8],[1171.1,256.9],[1163.1,241.9],[1155.0,227.0],[1138.4,223.4],[1121.9,219.8],[1105.3,216.2],[1088.7,212.6],[1072.1,209.0],[1055.6,205.4],[1039.0,201.8],[1022.4,198.2],[1005.8,194.6],[989.3,191.0],[972.7,187.4],[956.1,183.9],[939.5,180.3],[923.0,176.7],[906.4,173.1],[889.8,169.5],[873.2,165.9],[856.7,162.3],[840.1,158.7],[823.5,155.1],[806.9,151.5],[790.4,147.9],[773.6,148.6],[756.9,149.7],[740.3,152.0],[723.8,155.2],[707.5,159.0],[691.3,163.4],[675.1,167.9],[658.9,172.3],[642.7,176.5],[626.4,180.6],[610.2,184.8],[594.0,189.0],[577.7,193.2],[561.5,197.4],[545.2,201.6],[529.0,205.9],[512.8,210.2]];
-  const N = LINE.length, two = n => (n<10?"0":"")+n;
-  const nidx=(x,y)=>{let bi=0,bd=1e18;for(let i=0;i<N;i++){const d=(LINE[i][0]-x)**2+(LINE[i][1]-y)**2;if(d<bd){bd=d;bi=i;}}return bi;};
-  const NAMES={1:"Senna S",2:"Senna S",3:"Curva do Sol",4:"Descida do Lago",5:"Ferradura",11:"Junção"};
-  const CORNERS=[[1,212,322],[2,236,394],[3,243,578],[4,940,788],[5,950,624],[6,650,357],[7,706,264],
-    [8,833,249],[9,821,350],[10,1041,272],[11,997,431],[12,1166,588],[13,1240,464],[14,1155,227],[15,797,141]]
-    .map(([t,x,y])=>({t,x,y,name:NAMES[t]||"",idx:nidx(x,y)}));
-  const SEC1_END=nidx(795,775), SEC2_END=nidx(1120,560);
+  const INTER_LINE=[[496.6,214.6],[480.4,218.9],[464.2,223.4],[448.1,227.9],[431.9,232.4],[415.8,236.9],[399.6,241.4],[383.4,245.9],[367.3,250.4],[351.1,254.9],[335.0,259.4],[318.8,264.0],[302.6,268.5],[286.5,273.0],[270.3,277.5],[254.2,282.0],[238.0,286.5],[222.2,291.9],[207.6,300.1],[193.9,309.7],[184.5,323.3],[182.5,339.6],[187.7,355.5],[199.0,367.8],[211.0,379.4],[223.7,390.4],[233.3,403.9],[235.3,420.2],[229.5,435.9],[221.0,450.3],[213.1,465.1],[207.0,480.7],[202.6,496.9],[200.1,513.4],[199.3,530.2],[201.3,546.8],[204.7,563.2],[210.0,579.1],[217.2,594.2],[226.2,608.3],[236.8,621.3],[248.8,633.0],[261.9,643.4],[276.1,652.3],[291.1,659.8],[306.8,665.7],[322.9,670.3],[339.1,674.9],[355.2,679.4],[371.3,684.0],[387.5,688.5],[403.7,692.9],[420.0,696.7],[436.3,700.5],[452.7,704.4],[469.0,708.3],[485.3,712.1],[501.7,716.0],[518.0,719.8],[534.3,723.6],[550.7,727.3],[567.1,731.0],[583.4,734.7],[599.8,738.4],[616.1,742.1],[632.5,745.8],[648.8,749.8],[665.1,753.8],[681.4,757.7],[697.7,761.7],[714.0,765.6],[730.3,769.6],[746.6,773.6],[762.9,777.5],[779.2,781.5],[795.5,785.4],[811.8,789.4],[828.1,793.3],[844.4,797.3],[860.7,801.3],[877.0,805.2],[893.3,809.2],[909.6,813.2],[926.0,816.4],[942.7,815.7],[957.4,808.0],[967.6,794.9],[973.4,779.2],[976.5,762.7],[979.4,746.2],[982.3,729.6],[985.3,713.1],[987.5,696.5],[988.6,679.8],[986.7,663.1],[983.3,646.8],[977.0,631.3],[968.2,617.0],[958.6,603.3],[947.0,591.2],[934.2,580.4],[920.8,570.3],[907.3,560.4],[893.6,550.7],[880.0,541.0],[866.3,531.2],[852.6,521.5],[838.9,511.8],[825.1,502.3],[811.2,492.9],[797.4,483.5],[783.5,474.1],[769.6,464.7],[755.7,455.3],[741.8,445.8],[728.3,435.9],[714.7,426.0],[701.2,416.1],[687.4,406.6],[673.6,397.0],[660.0,387.2],[648.2,375.5],[640.7,360.5],[637.0,344.3],[636.2,327.6],[637.0,310.8],[640.2,294.4],[645.9,278.7],[653.5,263.7],[662.9,249.9],[675.7,239.4],[691.0,232.5],[707.1,227.8],[723.3,223.6],[739.6,219.7],[756.0,216.3],[772.6,213.4],[789.1,210.5],[805.8,209.0],[822.5,209.0],[837.8,215.1],[846.5,229.1],[845.5,245.6],[837.8,260.3],[827.9,273.8],[819.4,288.2],[815.5,304.4],[817.9,320.8],[826.8,334.8],[839.6,345.3],[855.4,350.5],[872.1,349.6],[887.0,342.5],[900.4,332.4],[912.0,320.3],[923.5,308.0],[935.0,295.8],[947.2,284.3],[960.0,273.5],[973.9,264.2],[989.5,258.1],[1005.6,253.4],[1021.9,249.4],[1038.4,246.2],[1055.0,244.3],[1071.1,247.5],[1082.2,258.9],[1082.1,275.2],[1071.8,288.0],[1059.5,299.3],[1047.1,310.6],[1034.7,321.9],[1022.5,333.4],[1010.3,344.9],[998.4,356.7],[988.8,370.4],[982.0,385.7],[978.5,402.1],[977.0,418.8],[978.1,435.5],[981.4,451.9],[987.7,467.3],[996.7,481.5],[1007.6,494.3],[1020.9,504.3],[1034.8,513.8],[1049.1,522.5],[1063.4,531.3],[1077.8,539.9],[1092.4,548.2],[1106.9,556.5],[1121.5,564.9],[1136.0,573.4],[1150.4,581.9],[1164.8,590.5],[1179.7,598.1],[1196.0,597.0],[1209.1,587.0],[1216.9,572.2],[1222.8,556.5],[1228.3,540.7],[1233.9,524.9],[1239.5,509.1],[1245.1,493.2],[1248.3,476.8],[1247.4,460.1],[1245.0,443.5],[1241.9,427.0],[1238.2,410.7],[1234.3,394.4],[1230.5,378.0],[1224.9,362.2],[1218.2,346.9],[1211.4,331.5],[1203.3,316.6],[1195.3,301.7],[1187.2,286.7],[1179.2,271.8],[1171.1,256.9],[1163.1,241.9],[1155.0,227.0],[1138.4,223.4],[1121.9,219.8],[1105.3,216.2],[1088.7,212.6],[1072.1,209.0],[1055.6,205.4],[1039.0,201.8],[1022.4,198.2],[1005.8,194.6],[989.3,191.0],[972.7,187.4],[956.1,183.9],[939.5,180.3],[923.0,176.7],[906.4,173.1],[889.8,169.5],[873.2,165.9],[856.7,162.3],[840.1,158.7],[823.5,155.1],[806.9,151.5],[790.4,147.9],[773.6,148.6],[756.9,149.7],[740.3,152.0],[723.8,155.2],[707.5,159.0],[691.3,163.4],[675.1,167.9],[658.9,172.3],[642.7,176.5],[626.4,180.6],[610.2,184.8],[594.0,189.0],[577.7,193.2],[561.5,197.4],[545.2,201.6],[529.0,205.9],[512.8,210.2]];
+  const two = n => (n<10?"0":"")+n;
+  const nearestIdx=(line,x,y)=>{let bi=0,bd=1e18;for(let i=0;i<line.length;i++){const d=(line[i][0]-x)**2+(line[i][1]-y)**2;if(d<bd){bd=d;bi=i;}}return bi;};
+  // ---- circuit registry: each track carries its centerline, corners and sector splits ----
+  const INTER=(()=>{const line=INTER_LINE, ni=(x,y)=>nearestIdx(line,x,y);
+    const NM={1:"Senna S",2:"Senna S",3:"Curva do Sol",4:"Descida do Lago",5:"Ferradura",11:"Junção"};
+    const corners=[[1,212,322],[2,236,394],[3,243,578],[4,940,788],[5,950,624],[6,650,357],[7,706,264],
+      [8,833,249],[9,821,350],[10,1041,272],[11,997,431],[12,1166,588],[13,1240,464],[14,1155,227],[15,797,141]]
+      .map(([t,x,y])=>({t,name:NM[t]||"",idx:ni(x,y)}));
+    return {id:"br-1940",name:"Interlagos",country:"Brazil",flag:"🇧🇷",len:4309,turns:15,
+      line, corners, sec1End:ni(795,775), sec2End:ni(1120,560),
+      hints:{OFF:{7:-26,9:-30,11:26},POS:{8:[-16,-8],10:[-8,20]}}};})();
+  const YAS=(()=>{const line=[[22,-14],[44,-17],[66,-20],[88,-23],[110,-26],[132,-29],[154,-32],[176,-35],[197,-38],[219,-41],[241,-44],[263,-47],[281,-58],[291,-77],[290,-99],[284,-121],[279,-142],[274,-164],[269,-185],[264,-207],[259,-228],[254,-250],[248,-271],[239,-291],[223,-306],[204,-316],[183,-323],[162,-330],[141,-336],[121,-346],[102,-358],[86,-372],[72,-389],[61,-408],[53,-429],[50,-451],[52,-472],[56,-494],[63,-515],[68,-537],[74,-558],[79,-579],[82,-601],[85,-623],[85,-645],[85,-667],[82,-689],[80,-711],[77,-733],[74,-755],[72,-777],[69,-799],[66,-821],[64,-843],[61,-864],[58,-886],[55,-908],[52,-930],[48,-952],[36,-970],[17,-980],[-4,-976],[-18,-959],[-26,-938],[-33,-918],[-39,-896],[-43,-875],[-48,-853],[-54,-832],[-61,-811],[-68,-790],[-75,-769],[-82,-748],[-89,-727],[-96,-706],[-103,-685],[-110,-665],[-117,-644],[-124,-623],[-132,-602],[-139,-581],[-146,-560],[-153,-539],[-160,-518],[-167,-497],[-174,-476],[-181,-455],[-188,-434],[-195,-413],[-202,-392],[-209,-372],[-216,-351],[-223,-330],[-230,-309],[-237,-288],[-244,-267],[-251,-246],[-258,-225],[-264,-204],[-270,-183],[-276,-161],[-282,-140],[-288,-119],[-295,-98],[-301,-77],[-308,-56],[-315,-35],[-321,-13],[-328,8],[-335,29],[-342,49],[-349,70],[-356,91],[-363,112],[-370,133],[-368,154],[-347,154],[-325,152],[-305,156],[-298,177],[-292,198],[-287,220],[-281,241],[-275,262],[-266,282],[-257,302],[-246,322],[-234,340],[-221,358],[-207,375],[-192,391],[-175,406],[-159,420],[-141,434],[-124,447],[-107,461],[-89,475],[-72,488],[-55,502],[-37,516],[-20,529],[-3,543],[15,557],[32,571],[49,585],[67,597],[85,610],[104,622],[123,633],[142,644],[161,654],[181,664],[201,674],[221,683],[241,692],[261,701],[281,710],[301,720],[321,729],[342,738],[363,744],[384,742],[405,734],[421,719],[432,700],[437,678],[435,657],[429,636],[417,617],[401,602],[381,592],[360,588],[338,586],[316,584],[294,582],[272,581],[250,579],[228,577],[206,575],[184,573],[162,570],[141,563],[122,552],[104,540],[85,528],[66,516],[48,504],[34,487],[28,466],[23,445],[19,423],[14,402],[9,380],[16,361],[38,357],[60,354],[82,351],[103,346],[120,334],[127,313],[127,291],[127,269],[127,247],[120,226],[101,216],[80,212],[58,212],[36,214],[14,217],[-8,221],[-30,224],[-52,228],[-73,231],[-95,234],[-117,237],[-139,238],[-161,235],[-181,226],[-195,209],[-205,190],[-216,170],[-226,151],[-237,132],[-249,113],[-260,94],[-266,73],[-267,51],[-260,31],[-240,23],[-218,20],[-196,17],[-174,14],[-152,11],[-131,8],[-109,4],[-87,1],[-65,-2],[-43,-5],[-21,-8],[1,-11]];
+    const ci=[12,22,32,43,60,114,118,125,163,180,186,192,198,202,216,226];
+    return {id:"ae-2009",name:"Yas Marina",country:"Abu Dhabi",flag:"🇦🇪",len:5281,turns:16,
+      line, corners:ci.map((idx,k)=>({t:k+1,name:"",idx})), sec1End:52, sec2End:154, hints:{MIN:[16],ANG:{11:0}}};})();
+  const TRACKS=[INTER,YAS], BYID={}; TRACKS.forEach(t=>BYID[t.id]=t);
+  let A,LINE,N,CORNERS,SEC1_END,SEC2_END,HINTS;
+  function useGeom(tr){A=tr;LINE=tr.line;N=LINE.length;CORNERS=tr.corners;SEC1_END=tr.sec1End;SEC2_END=tr.sec2End;HINTS=tr.hints||{};}
+  useGeom(INTER);
   const sectorOf=i=>i<SEC1_END?1:i<SEC2_END?2:3;
   const SVAR={1:"--s1",2:"--s2",3:"--s3"};
   const sectorColor=i=>css(SVAR[sectorOf(i)]);
@@ -370,7 +429,9 @@ $("#analyzeBtn").onclick = () => {
     ctx.lineJoin="round"; ctx.lineCap="round"; ctx.strokeStyle=css("--track"); ctx.lineWidth=14;
     ctx.beginPath(); pathSmooth(ctx,Q,true); ctx.stroke();
     ctx.lineCap="butt"; ctx.lineWidth=8;
-    [[0,SEC1_END,"--s1"],[SEC1_END,SEC2_END,"--s2"],[SEC2_END,N,"--s3"]].forEach(([a,b,v])=>{
+    // each earlier sector runs a few points past its boundary so it underlaps the seam —
+    // no gap at sharp corners where the colour changes, while the visible split stays exact.
+    [[0,SEC1_END+3,"--s1"],[SEC1_END,SEC2_END+3,"--s2"],[SEC2_END,N,"--s3"]].forEach(([a,b,v])=>{
       const seg=[]; for(let i=a;i<=b;i++) seg.push(Q[i%N]);
       ctx.strokeStyle=css(v); ctx.beginPath(); pathSmooth(ctx,seg,false); ctx.stroke(); });
     const s0=Q[0],s1=Q[1],an=Math.atan2(s1[1]-s0[1],s1[0]-s0[0])+Math.PI/2;
@@ -383,13 +444,61 @@ $("#analyzeBtn").onclick = () => {
     let cx=0,cy=0; Q.forEach(p=>{cx+=p[0];cy+=p[1];}); cx/=N; cy/=N;
     const put=(cls,html,x,y)=>{const el=document.createElement("div");el.className="tv-lbl "+cls;el.innerHTML=html;el.style.left=x+"px";el.style.top=y+"px";box.appendChild(el);return el;};
     const outward=(i,off)=>{const a=Q[(i-3+N)%N],b=Q[(i+3)%N];let nx=-(b[1]-a[1]),ny=(b[0]-a[0]);const m=Math.hypot(nx,ny)||1;nx/=m;ny/=m;const p=Q[i];if(nx*(p[0]-cx)+ny*(p[1]-cy)<0){nx=-nx;ny=-ny;}return [p[0]+nx*off,p[1]+ny*off];};
-    const OFF={7:-26,9:-30,11:26}, POS={8:[-16,-8],10:[-8,20]};
-    CORNERS.forEach(c=>{ let x,y; if(POS[c.t]){const p=Q[c.idx];x=p[0]+POS[c.t][0];y=p[1]+POS[c.t][1];} else {[x,y]=outward(c.idx,OFF[c.t]??22);} put("num",two(c.t),x,y); });
-    { const [x,y]=outward(0,24); put("sf","S/F",x,y); }
-    const t3=CORNERS.find(c=>c.t===3), t6=CORNERS.find(c=>c.t===6), q6=Q[t6.idx];
-    { const [x,y]=outward(t3.idx,-46); put("sect","Sector 1",x,y).style.color=css("--s1"); }
-    put("sect","Sector 2",q6[0]-40,q6[1]-38).style.color=css("--s2");
-    { const [x,y]=outward(Math.round((SEC2_END+N)*0.5),32); put("sect","Sector 3",x,y).style.color=css("--s3"); }
+    if(HINTS.OFF || HINTS.POS){
+      // hand-tuned placement (Interlagos) — the original, non-overlapping layout
+      const OFF=HINTS.OFF||{}, POS=HINTS.POS||{};
+      CORNERS.forEach(c=>{ let x,y; if(POS[c.t]){const p=Q[c.idx];x=p[0]+POS[c.t][0];y=p[1]+POS[c.t][1];} else {[x,y]=outward(c.idx,OFF[c.t]??22);} put("num",two(c.t),x,y); });
+      { const [x,y]=outward(0,24); put("sf","S/F",x,y); }
+      const t3=CORNERS.find(c=>c.t===3), t6=CORNERS.find(c=>c.t===6), q6=Q[t6.idx];
+      { const [x,y]=outward(t3.idx,-46); put("sect","Sector 1",x,y).style.color=css("--s1"); }
+      put("sect","Sector 2",q6[0]-40,q6[1]-38).style.color=css("--s2");
+      { const [x,y]=outward(Math.round((SEC2_END+N)*0.5),32); put("sect","Sector 3",x,y).style.color=css("--s3"); }
+      return;
+    }
+    // ---- automatic non-overlapping placement (Yas Marina & future circuits) ----
+    const segMin=(lx,ly,idx)=>{ let md=1e9;
+      for(let j=0;j<N;j++){ const j2=(j+1)%N;
+        if(idx!=null && Math.min((j-idx+N)%N,(idx-j+N)%N)<6 && Math.min((j2-idx+N)%N,(idx-j2+N)%N)<6) continue;
+        const a=Q[j],b=Q[j2],vx=b[0]-a[0],vy=b[1]-a[1];
+        let tt=(vx*(lx-a[0])+vy*(ly-a[1]))/((vx*vx+vy*vy)||1); tt=tt<0?0:tt>1?1:tt;
+        const e=Math.hypot(a[0]+vx*tt-lx,a[1]+vy*tt-ly); if(e<md)md=e; } return md; };
+    const dir=idx=>{ const p=Q[idx],a=Q[(idx-4+N)%N],b=Q[(idx+4)%N]; let tx=b[0]-a[0],ty=b[1]-a[1];
+      const tm=Math.hypot(tx,ty)||1; tx/=tm; ty/=tm; let nx=-ty,ny=tx;
+      if(nx*(p[0]-cx)+ny*(p[1]-cy)<0){nx=-nx;ny=-ny;} return Math.atan2(ny,nx); };
+    const placed=[];
+    const FAN=[0,16,-16,32,-32,50,-50,72,-72,96,-96,120,-120,150,-150,180];
+    const MIN=HINTS.MIN||[];   // turns to place on the inside (toward the corner) instead of outward
+    const ANG=HINTS.ANG||{};   // turns to aim at an explicit angle (deg, 0=right) into a specific gap
+    // numbered turn markers: grow outward until the bubble clears the (thick) line and other markers
+    CORNERS.forEach(c=>{ const p=Q[c.idx]; const aimed=ANG[c.t]!=null;
+      let base=dir(c.idx); if(MIN.includes(c.t)) base+=Math.PI; if(aimed) base=ANG[c.t]*Math.PI/180;
+      // aimed markers stay near their direction and tuck closer (tighter spacing) to fit small gaps
+      const fan = aimed ? [0,12,-12,24,-24,36,-36,50,-50] : FAN;
+      const thr = aimed?17:18, gap = aimed?16:20, o0 = aimed?10:16, step = aimed?2:3;
+      let best=null;
+      for(let off=o0; off<=58 && !best; off+=step){
+        for(const da of fan){ const r=base+da*Math.PI/180, lx=p[0]+Math.cos(r)*off, ly=p[1]+Math.sin(r)*off;
+          if(segMin(lx,ly,c.idx)>=thr && placed.every(m=>Math.hypot(m[0]-lx,m[1]-ly)>=gap)){ best=[lx,ly]; break; } } }
+      if(!best) best=outward(c.idx,24);
+      placed.push(best); put("num",two(c.t),best[0],best[1]); });
+    { const [x,y]=outward(0,20); put("sf","S/F",x,y); }
+    // sector labels: spiral out from the middle of each sector to the nearest roomy spot
+    // that clears the (thick) line and every marker — robust to canvas size.
+    const secLabel=(idx,txt,v)=>{ const p=Q[idx], hw=txt.length*3.6+5, hh=8;
+      const clear=(lx,ly)=>{
+        for(const m of placed){ if(Math.max(Math.abs(m[0]-lx)-hw,0)**2+Math.max(Math.abs(m[1]-ly)-hh,0)**2 < 144) return false; }
+        for(let sx=-1;sx<=1;sx+=0.5) for(let sy=-1;sy<=1;sy++){ if(segMin(lx+sx*hw,ly+sy*hh,null) < 11) return false; }
+        return true; };
+      let best=null;
+      for(let r=8; r<=130 && !best; r+=6){ let cand=null, room=-1;
+        for(let da=0; da<360; da+=15){ const rad=da*Math.PI/180, lx=p[0]+Math.cos(rad)*r, ly=p[1]+Math.sin(rad)*r;
+          if(clear(lx,ly)){ const c=segMin(lx,ly,null); if(c>room){ room=c; cand=[lx,ly]; } } }
+        if(cand) best=cand; }
+      if(!best) best=outward(idx,40);
+      put("sect",txt,best[0],best[1]).style.color=css(v); };
+    secLabel(Math.round(SEC1_END*0.5),"Sector 1","--s1");
+    secLabel(Math.round((SEC1_END+SEC2_END)*0.5),"Sector 2","--s2");
+    secLabel(Math.round((SEC2_END+N)*0.5)%N,"Sector 3","--s3");
   }
 
   let sg=null;
@@ -494,6 +603,26 @@ $("#analyzeBtn").onclick = () => {
     playFrom=(Math.round(pos)>=N-1)?0:T.time[Math.round(pos)];   // resume from marker, restart at the line
     playRaf=requestAnimationFrame(playFrame); };
 
+  function drawMini(canvas, tr){
+    const dpr=Math.min(2,devicePixelRatio||1), r=canvas.getBoundingClientRect();
+    canvas.width=Math.round(r.width*dpr); canvas.height=Math.round(r.height*dpr);
+    const ctx=canvas.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+    const w=r.width,h=r.height,pad=14, Ln=tr.line, n=Ln.length;
+    let a=1e9,b=1e9,c=-1e9,d=-1e9; Ln.forEach(p=>{a=Math.min(a,p[0]);b=Math.min(b,p[1]);c=Math.max(c,p[0]);d=Math.max(d,p[1]);});
+    const s=Math.min((w-2*pad)/(c-a),(h-2*pad)/(d-b)), ox=pad+((w-2*pad)-(c-a)*s)/2, oy=pad+((h-2*pad)-(d-b)*s)/2;
+    const Q=Ln.map(p=>[ox+(p[0]-a)*s,oy+(p[1]-b)*s]);
+    ctx.clearRect(0,0,w,h); ctx.lineJoin="round"; ctx.lineCap="round";
+    ctx.strokeStyle=css("--track"); ctx.lineWidth=6; ctx.beginPath(); pathSmooth(ctx,Q,true); ctx.stroke();
+    ctx.lineCap="butt"; ctx.lineWidth=3.4;
+    [[0,tr.sec1End,"--s1"],[tr.sec1End,tr.sec2End,"--s2"],[tr.sec2End,n,"--s3"]].forEach(([x,y,v])=>{
+      const seg=[]; for(let i=x;i<=y;i++) seg.push(Q[i%n]);
+      ctx.strokeStyle=css(v); ctx.beginPath(); pathSmooth(ctx,seg,false); ctx.stroke(); });
+  }
+  function setActiveTrack(id){ const tr=BYID[id]||INTER; useGeom(tr); T=null; pos=0;
+    const nm=$("#tvTrackName"); if(nm) nm.textContent=tr.name;
+    $("#tvPlay").disabled=true; $("#tvPlayInfo").textContent=""; $("#tvErr").textContent="";
+    layout(); }
+  window.TrackView = { list:()=>TRACKS, setActive:setActiveTrack, drawMini, activeId:()=>A.id };
   function layout(){ ["tvBase","tvFx","tvStrip","tvStripFx"].forEach(size); drawTrack(); drawStrip(); drawFx(); }
   let rt=0; const ro=new ResizeObserver(()=>{clearTimeout(rt);rt=setTimeout(layout,60);});
   ro.observe($("#tvTrackbox")); ro.observe($("#tvStripBox"));
@@ -513,6 +642,7 @@ $("#analyzeBtn").onclick = () => {
     const name=$("#tvSession").value; stopPlay(); T=null;
     $("#tvPlay").disabled=true; $("#tvPlayInfo").textContent=""; $("#tvLap").innerHTML=""; layout();
     if(!name) return;
+    setActiveTrack((window.__sessTrack&&window.__sessTrack[name])||"br-1940");
     const {laps} = await (await fetch(`/api/sessions/${encodeURIComponent(name)}/laps`)).json();
     const usable=(laps||[]).filter(l=>l.complete);
     const list=usable.length?usable:(laps||[]);
