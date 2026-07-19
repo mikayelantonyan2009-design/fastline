@@ -22,10 +22,19 @@ import matplotlib.pyplot as plt
 RENDER_DPI = 130          # for the inline web chart
 DEFAULT_COLORS = ("#3671C6", "#FF8000")   # lap1 (blue), lap2 (orange)
 
-# Interlagos corner positions as a fraction of lap distance (from the track geometry)
+# Corner positions as a fraction of lap distance (turn -> frac), per circuit.
 CORNER_FRAC = {1: 0.0731, 2: 0.0998, 3: 0.1459, 4: 0.3267, 5: 0.3728, 6: 0.469,
                7: 0.5035, 8: 0.5495, 9: 0.5686, 10: 0.6261, 11: 0.6872,
-               12: 0.7449, 13: 0.787, 14: 0.8451, 15: 0.9307}
+               12: 0.7449, 13: 0.787, 14: 0.8451, 15: 0.9307}   # Interlagos
+YAS_FRAC = {1: 0.0833, 2: 0.0883, 3: 0.1072, 4: 0.153, 5: 0.2777, 6: 0.5068,
+            7: 0.5186, 8: 0.5235, 9: 0.7102, 10: 0.7242, 11: 0.8246, 12: 0.833,
+            13: 0.8379, 14: 0.8523, 15: 0.8754, 16: 0.9731}   # Yas Marina
+CORNER_FRAC_BY_TRACK = {"br-1940": CORNER_FRAC, "ae-2009": YAS_FRAC}
+
+
+def corners_for(track):
+    """Corner fractions for a circuit id, defaulting to Interlagos."""
+    return CORNER_FRAC_BY_TRACK.get(track, CORNER_FRAC)
 
 
 def load(csv_path):
@@ -117,22 +126,24 @@ def pick_laps(summary, laps=None):
     return int(complete["lap"].iloc[0]), int(complete["lap"].iloc[1])
 
 
-def build_figure(df, lap1_n, lap2_n, color1=DEFAULT_COLORS[0], color2=DEFAULT_COLORS[1]):
+def build_figure(df, lap1_n, lap2_n, colors=DEFAULT_COLORS, corners=None):
     """Build the 6-panel engineer overlay comparing two laps.
-    color1 / color2 are the line colors for lap1 / lap2.
-    Returns (figure, info) where info has the net delta at the line."""
+    colors is (lap1, lap2) line colors; corners maps turn -> lap fraction
+    (defaults to Interlagos). Returns (figure, info) with the net delta."""
+    color1, color2 = colors
+    corners = corners if corners is not None else CORNER_FRAC
     A = get_lap(df, lap1_n)
     B = get_lap(df, lap2_n)
     d, delta = delta_time(A, B)
 
-    fig, ax = plt.subplots(6, 1, figsize=(14, 15), sharex=True,
+    fig, ax = plt.subplots(6, 1, figsize=(20, 15), sharex=True,
                            gridspec_kw={"height_ratios": [3, 1.6, 1, 0.7, 1.1, 0.8]})
 
     ax[0].plot(A["lap_distance_m"], A["speed_kmh"], label=f"Lap {lap1_n}", color=color1)
     ax[0].plot(B["lap_distance_m"], B["speed_kmh"], label=f"Lap {lap2_n}", color=color2)
     ax[0].set_ylabel("Speed (km/h)")
     ax[0].legend(loc="lower left")
-    ax[0].set_title(f"Lap {lap1_n} vs Lap {lap2_n} - your own telemetry", pad=34)
+    ax[0].set_title(f"Lap {lap1_n} vs Lap {lap2_n} - your own telemetry", pad=38)
 
     ax[1].plot(d, delta, color="purple")
     ax[1].axhline(0, color="black", lw=0.8)
@@ -161,21 +172,35 @@ def build_figure(df, lap1_n, lap2_n, color1=DEFAULT_COLORS[0], color2=DEFAULT_CO
 
     for a in ax:
         a.grid(alpha=0.25)
-    # turn markers: dashed vertical line at each corner + T# above the top panel
+    # turn markers: a dashed line at each corner, and T# labels on ONE row.
+    # Corners that sit too close to label separately are merged into a range
+    # (e.g. "T6-8") so the labels stay on a single clean line without overlapping.
     track_len = float(A["lap_distance_m"].max())
-    for turn, frac in CORNER_FRAC.items():
-        xc = frac * track_len
+    items = sorted(corners.items(), key=lambda kv: kv[1])
+    for _, frac in items:
         for a in ax:
-            a.axvline(xc, color="0.5", lw=0.6, ls=(0, (3, 3)), alpha=0.35)
-        ax[0].annotate(f"T{turn}", xy=(xc, 1.01), xycoords=("data", "axes fraction"),
+            a.axvline(frac * track_len, color="0.5", lw=0.6, ls=(0, (3, 3)), alpha=0.35)
+    merge_gap = track_len * 0.014
+    groups = []
+    for turn, frac in items:
+        xc = frac * track_len
+        if groups and xc - groups[-1][-1][1] < merge_gap:
+            groups[-1].append((turn, xc))
+        else:
+            groups.append([(turn, xc)])
+    for grp in groups:
+        turns = [t for t, _ in grp]
+        xmid = sum(x for _, x in grp) / len(grp)
+        label = f"T{turns[0]}" if len(turns) == 1 else f"T{turns[0]}–{turns[-1]}"
+        ax[0].annotate(label, xy=(xmid, 1.02), xycoords=("data", "axes fraction"),
                        ha="center", va="bottom", fontsize=7, color="0.4")
     fig.tight_layout()
     return fig, {"net_delta": net}
 
 
-def render_png(df, lap1_n, lap2_n, color1=DEFAULT_COLORS[0], color2=DEFAULT_COLORS[1]):
+def render_png(df, lap1_n, lap2_n, colors=DEFAULT_COLORS, corners=None):
     """Render the overlay to PNG bytes (used by the web UI). Non-interactive."""
-    fig, info = build_figure(df, lap1_n, lap2_n, color1=color1, color2=color2)
+    fig, info = build_figure(df, lap1_n, lap2_n, colors, corners)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight")
     plt.close(fig)

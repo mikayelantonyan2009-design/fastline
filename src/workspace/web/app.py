@@ -146,9 +146,12 @@ def _analyze(name, body):
         return jsonify(error="No lap data in this session"), 400
     summary = f1_analyze.lap_summary(df)
     colors = _clean_colors(body.get("colors"))
+    pair = (colors.get("color1", f1_analyze.DEFAULT_COLORS[0]),
+            colors.get("color2", f1_analyze.DEFAULT_COLORS[1]))
     try:
         lap1, lap2 = f1_analyze.pick_laps(summary, body.get("laps"))
-        png, info = f1_analyze.render_png(df, lap1, lap2, **colors)
+        png, info = f1_analyze.render_png(df, lap1, lap2, colors=pair,
+                                          corners=f1_analyze.corners_for(_session_track(p)))
     except ValueError as e:
         return jsonify(error=str(e)), 400
     return jsonify(
