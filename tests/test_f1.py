@@ -222,3 +222,26 @@ def test_session_rename(tmp_path, monkeypatch):
     assert row["label"] is None
     assert client.post("/api/sessions/nope.csv/name",
                        json={"name": "x"}).status_code == 404
+
+
+def test_session_remembers_year(tmp_path, monkeypatch):
+    """The chosen car-year is saved with the session and surfaced in the list;
+    an unsupported year is dropped."""
+    monkeypatch.setenv("WORKSPACE_SESSIONS_DIR", str(tmp_path))
+    port = _free_udp_port()
+    rec = Recorder(tmp_path)
+    assert rec.start(port=port, track="ae-2009", year=2026) is True
+    f1_sim.simulate(dest=("127.0.0.1", port), laps=3, hz=240, warmup=0.3)
+    time.sleep(0.3)
+    rec.stop()
+
+    csvs = list(tmp_path.glob("f1_session_*.csv"))
+    assert len(csvs) == 1
+    assert csvs[0].with_suffix(".year").read_text() == "2026"
+
+    from workspace.web.app import create_app, _clean_year
+    assert _clean_year("2025") == 2025 and _clean_year(1999) is None
+    client = create_app().test_client()
+    row = next(s for s in client.get("/api/sessions").get_json()
+               if s["name"] == csvs[0].name)
+    assert row["year"] == 2026 and row["track"] == "ae-2009"

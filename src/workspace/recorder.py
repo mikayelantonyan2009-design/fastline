@@ -33,14 +33,16 @@ class Recorder:
         self._thread = None
         self._stop = None
         self._track = None
+        self._year = None
         self._lock = threading.Lock()
         self._status = LiveStatus(_idle_status())
 
-    def start(self, port=f1_logger.PORT, track=None):
+    def start(self, port=f1_logger.PORT, track=None, year=None):
         with self._lock:
             if self._status.get("recording"):
                 return False
             self._track = track
+            self._year = year
             self._status = LiveStatus({**_idle_status(), "recording": True,
                                        "message": "Waiting for packets…",
                                        "started_at": time.time(), "port": port})
@@ -50,13 +52,17 @@ class Recorder:
         return True
 
     def _write_track_meta(self):
-        """Persist which circuit this session was recorded at, as a sidecar next
-        to the CSV, so the viewer can pick the right map when it's reopened."""
+        """Persist which circuit and car-year this session was recorded at, as
+        sidecars next to the CSV, so the viewer can pick the right map later."""
         fname = self._status.get("session_file")
-        if not (fname and self._track):
+        if not fname:
             return
+        base = self.out_dir / fname
         try:
-            (self.out_dir / fname).with_suffix(".track").write_text(self._track)
+            if self._track:
+                base.with_suffix(".track").write_text(self._track)
+            if self._year:
+                base.with_suffix(".year").write_text(str(self._year))
         except OSError:
             pass
 

@@ -36,6 +36,26 @@ def _session_track(csv_path):
     return None
 
 
+def _clean_year(val):
+    """Accept only a supported car/season year (2025 or 2026)."""
+    try:
+        y = int(val)
+    except (TypeError, ValueError):
+        return None
+    return y if y in (2025, 2026) else None
+
+
+def _session_year(csv_path):
+    """Read the car-year a session was recorded at, if any."""
+    meta = csv_path.with_suffix(".year")
+    if meta.is_file():
+        try:
+            return _clean_year(meta.read_text().strip())
+        except OSError:
+            pass
+    return None
+
+
 def _clean_label(val):
     """A friendly session name: trimmed, printable-only, length-capped."""
     if not isinstance(val, str):
@@ -118,7 +138,7 @@ def _list_sessions():
         stat = p.stat()
         out.append({"name": p.name, "size": stat.st_size,
                     "modified": int(stat.st_mtime), "track": _session_track(p),
-                    "label": _session_name(p)})
+                    "label": _session_name(p), "year": _session_year(p)})
     return jsonify(out)
 
 
@@ -165,7 +185,8 @@ def _record_start(recorder, req):
     body = req.json if req.is_json else {}
     port = int(body.get("port", PORT))
     track = _clean_track(body.get("track"))
-    if not recorder.start(port=port, track=track):
+    year = _clean_year(body.get("year"))
+    if not recorder.start(port=port, track=track, year=year):
         return jsonify(error="Already recording"), 409
     return jsonify(recorder.status())
 
