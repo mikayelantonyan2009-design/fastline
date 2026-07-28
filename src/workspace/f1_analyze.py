@@ -29,9 +29,9 @@ CORNER_FRAC = {1: 0.0731, 2: 0.0998, 3: 0.1459, 4: 0.3267, 5: 0.3728, 6: 0.469,
 YAS_FRAC = {1: 0.0833, 2: 0.0883, 3: 0.1072, 4: 0.153, 5: 0.2777, 6: 0.5068,
             7: 0.5186, 8: 0.5235, 9: 0.7102, 10: 0.7242, 11: 0.8246, 12: 0.833,
             13: 0.8379, 14: 0.8523, 15: 0.8754, 16: 0.9731}   # Yas Marina
-BARCA_FRAC = {1: 0.1625, 2: 0.1833, 3: 0.225, 4: 0.3458, 5: 0.4333, 6: 0.4917,
-              7: 0.5208, 8: 0.5458, 9: 0.6042, 10: 0.7208, 11: 0.75, 12: 0.7917,
-              13: 0.8542, 14: 0.9167}   # Barcelona-Catalunya (14-turn layout)
+BARCA_FRAC = {1: 0.172, 2: 0.18, 3: 0.188, 4: 0.377, 5: 0.46, 6: 0.538,
+              7: 0.547, 8: 0.558, 9: 0.636, 10: 0.752, 11: 0.808, 12: 0.82,
+              13: 0.883, 14: 0.941}   # Barcelona, calibrated to braking zones from telemetry
 CORNER_FRAC_BY_TRACK = {"br-1940": CORNER_FRAC, "ae-2009": YAS_FRAC,
                         "es-1991": BARCA_FRAC}
 
@@ -176,28 +176,22 @@ def build_figure(df, lap1_n, lap2_n, colors=DEFAULT_COLORS, corners=None):
 
     for a in ax:
         a.grid(alpha=0.25)
-    # turn markers: a dashed line at each corner, and T# labels on ONE row.
-    # Corners that sit too close to label separately are merged into a range
-    # (e.g. "T6-8") so the labels stay on a single clean line without overlapping.
+    # turn markers: a dashed line at each corner and its own T# label. Every turn is
+    # labelled individually (never merged) on ONE horizontal row; a label that would
+    # collide with the previous one is slid sideways just enough to stay clear, while
+    # its dashed line stays on the true corner position.
     track_len = float(A["lap_distance_m"].max())
     items = sorted(corners.items(), key=lambda kv: kv[1])
     for _, frac in items:
         for a in ax:
             a.axvline(frac * track_len, color="0.5", lw=0.6, ls=(0, (3, 3)), alpha=0.35)
-    merge_gap = track_len * 0.014
-    groups = []
+    min_sep = track_len * 0.011           # smallest gap between adjacent labels
+    last_x = -1e9
     for turn, frac in items:
-        xc = frac * track_len
-        if groups and xc - groups[-1][-1][1] < merge_gap:
-            groups[-1].append((turn, xc))
-        else:
-            groups.append([(turn, xc)])
-    for grp in groups:
-        turns = [t for t, _ in grp]
-        xmid = sum(x for _, x in grp) / len(grp)
-        label = f"T{turns[0]}" if len(turns) == 1 else f"T{turns[0]}–{turns[-1]}"
-        ax[0].annotate(label, xy=(xmid, 1.02), xycoords=("data", "axes fraction"),
+        x = max(frac * track_len, last_x + min_sep)
+        ax[0].annotate(f"T{turn}", xy=(x, 1.02), xycoords=("data", "axes fraction"),
                        ha="center", va="bottom", fontsize=7, color="0.4")
+        last_x = x
     fig.tight_layout()
     return fig, {"net_delta": net}
 

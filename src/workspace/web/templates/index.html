@@ -451,6 +451,7 @@ $("#analyzeBtn").onclick = () => {
     const ci=[39, 44, 54, 83, 104, 118, 125, 131, 145, 173, 180, 190, 205, 220];
     return {id:"es-1991",name:"Barcelona",country:"Spain",flag:"🇪🇸",len:4657,turns:14,years:[2025,2026],
       line, corners:ci.map((idx,k)=>({t:k+1,name:"",idx})), sec1End:80, sec2End:172, hints:{SECXY:{3:[906,8]}},
+      cdist:[0.172,0.18,0.188,0.377,0.46,0.538,0.547,0.558,0.636,0.752,0.808,0.82,0.883,0.941],
       overlays:{2025:{speedTrap:25, drsDet:[138, 212], drsZones:[[235, 274],[148, 171]]},
                 2026:{speedTrap:25, otDet:200, otAct:213,
                       smZones:[[223,274],[62,80],[108,123],[148,171]]}}};})();
@@ -632,7 +633,11 @@ $("#analyzeBtn").onclick = () => {
   function drawStrip(){
     const {ctx,w,h}=L.tvStrip; ctx.clearRect(0,0,w,h);
     if(!T){ sg=null; return; }
-    const padL=58,padR=10,padT=18,padB=6, gw=w-padL-padR, X=i=>padL+i/(N-1)*gw;
+    // x-axis is REAL lap distance (from the calibrated warp) so the strip matches the
+    // analyze chart's proportions; accepts fractional positions for the playback marker.
+    const padL=58,padR=10,padT=18,padB=6, gw=w-padL-padR,
+      X=p=>{const i0=Math.floor(p),i1=Math.min(i0+1,N-1),dd=T.lineDist[i0]+(T.lineDist[i1]-T.lineDist[i0])*(p-i0);
+        return padL+dd/T.lapLen*gw;};
     const rnd=(a,r)=>Math.ceil((Math.max(...a)+r*0.5)/r)*r;
     const panels=[
       {label:"Speed (km/h)", data:T.speed, min:0, max:rnd(T.speed,50), wt:2.2, sector:true, ticks:[0,100,200,300]},
@@ -663,16 +668,18 @@ $("#analyzeBtn").onclick = () => {
         ctx.stroke(); }
       y=bot+gap;
     });
-    // turn markers: T# at top + dashed vertical line at each corner's position
+    // turn markers: a dashed line at each corner's true position, plus one T# label per
+    // turn on a SINGLE top row. Labels are slid sideways just enough to never overlap
+    // (each turn stays separate — never merged), while its dashed line stays on the apex.
     const plotBot=y-gap;
     ctx.font="9px ui-monospace,Menlo,monospace"; ctx.textBaseline="top";
+    ctx.strokeStyle=css("--muted"); ctx.globalAlpha=.28; ctx.lineWidth=1; ctx.setLineDash([3,3]);
     CORNERS.forEach(c=>{ const x=X(c.idx);
-      ctx.strokeStyle=css("--muted"); ctx.globalAlpha=.28; ctx.lineWidth=1; ctx.setLineDash([3,3]);
-      ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,plotBot); ctx.stroke();
-      ctx.globalAlpha=1; ctx.setLineDash([]);
-      ctx.fillStyle=css("--muted"); ctx.textAlign="center";
-      ctx.fillText("T"+c.t, x, 4);   // single row across the top
-    });
+      ctx.beginPath(); ctx.moveTo(x,padT); ctx.lineTo(x,plotBot); ctx.stroke(); });
+    ctx.globalAlpha=1; ctx.setLineDash([]);
+    ctx.fillStyle=css("--muted"); ctx.textAlign="center";
+    let lastLx=-1e9;
+    CORNERS.forEach(c=>{ const lx=Math.max(X(c.idx), lastLx+21); ctx.fillText("T"+c.t, lx, 4); lastLx=lx; });
     sg={X, padL, gw, top:padT, bot:plotBot};
   }
 
@@ -709,7 +716,9 @@ $("#analyzeBtn").onclick = () => {
   const seekTrack=e=>{ if(!proj||!T)return; const r=$("#tvFx").getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
     let bi=0,bd=1e18; for(let i=0;i<N;i++){const q=proj(LINE[i]);const d=(q[0]-mx)**2+(q[1]-my)**2;if(d<bd){bd=d;bi=i;}} setPos(bi); };
   const seekStrip=e=>{ if(!sg||!T)return; const r=$("#tvStripFx").getBoundingClientRect();
-    setPos(Math.max(0,Math.min(N-1,(e.clientX-r.left-sg.padL)/sg.gw*(N-1)))); };
+    const frac=Math.max(0,Math.min(1,(e.clientX-r.left-sg.padL)/sg.gw)), target=frac*T.lapLen, a=T.lineDist;
+    let lo=0,hi=N-1; while(hi-lo>1){const m=(lo+hi)>>1; a[m]<=target?lo=m:hi=m;}
+    const span=a[hi]-a[lo]; setPos(span>0?lo+(target-a[lo])/span:lo); };
   function bind(id,which,seek){ const el=$(id);
     el.addEventListener("pointerdown",e=>{stopPlay();drag=which;el.classList.add("grabbing");el.setPointerCapture(e.pointerId);seek(e);});
     el.addEventListener("pointermove",e=>{if(drag===which)seek(e);});
