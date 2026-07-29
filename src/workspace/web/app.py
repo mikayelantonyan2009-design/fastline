@@ -157,6 +157,24 @@ def _session_laps(name):
     return jsonify(laps=laps)
 
 
+def _lap_b_source(name, ref_p, body):
+    """Resolve an optional second session for Lap B. Returns (df2, b_label, err):
+    df2 is None for an intra-session compare; err is a (response, status) tuple if
+    the request is invalid. Lap B may only come from the same track AND same year."""
+    b_name = body.get("lapBSession")
+    if not (isinstance(b_name, str) and b_name and b_name != name):
+        return None, None, None
+    pb = _safe_csv(b_name)
+    if pb is None:
+        return None, None, (jsonify(error="No such session for Lap B"), 404)
+    if (_session_track(pb), _session_year(pb)) != (_session_track(ref_p), _session_year(ref_p)):
+        return None, None, (jsonify(error="Lap B must be from the same track and year"), 400)
+    df2 = f1_analyze.load(pb)
+    if df2.empty:
+        return None, None, (jsonify(error="No lap data in the Lap B session"), 400)
+    return df2, (_session_name(pb) or b_name), None
+
+
 def _analyze(name, body):
     p = _safe_csv(name)
     if p is None:
@@ -164,14 +182,24 @@ def _analyze(name, body):
     df = f1_analyze.load(p)
     if df.empty:
         return jsonify(error="No lap data in this session"), 400
+    df2, b_label, err = _lap_b_source(name, p, body)
+    if err:
+        return err
     summary = f1_analyze.lap_summary(df)
     colors = _clean_colors(body.get("colors"))
     pair = (colors.get("color1", f1_analyze.DEFAULT_COLORS[0]),
             colors.get("color2", f1_analyze.DEFAULT_COLORS[1]))
     try:
         lap1, lap2 = f1_analyze.pick_laps(summary, body.get("laps"))
-        png, info = f1_analyze.render_png(df, lap1, lap2, colors=pair,
-                                          corners=f1_analyze.corners_for(_session_track(p)))
+        if df2 is not None and lap2 not in df2["lap"].values:
+            return jsonify(error="That lap isn't in the Lap B session"), 400
+        labels = None
+        if df2 is not None:
+            a_label = _session_name(p) or name
+            labels = (f"Lap {lap1} · {a_label}", f"Lap {lap2} · {b_label}")
+        png, info = f1_analyze.render_png(
+            (df, df2 if df2 is not None else df), (lap1, lap2), colors=pair,
+            corners=f1_analyze.corners_for(_session_track(p)), labels=labels)
     except ValueError as e:
         return jsonify(error=str(e)), 400
     return jsonify(

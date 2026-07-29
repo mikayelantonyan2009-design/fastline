@@ -41,7 +41,7 @@ def test_record_then_analyze(tmp_path):
     assert (summary["complete"]).sum() >= 2       # at least two full laps
 
     lap1, lap2 = f1_analyze.pick_laps(summary)
-    png, info = f1_analyze.render_png(df, lap1, lap2)
+    png, info = f1_analyze.render_png((df, df), (lap1, lap2))
     assert png[:8] == b"\x89PNG\r\n\x1a\n"          # valid PNG signature
     assert "net_delta" in info
 
@@ -245,3 +245,41 @@ def test_session_remembers_year(tmp_path, monkeypatch):
     row = next(s for s in client.get("/api/sessions").get_json()
                if s["name"] == csvs[0].name)
     assert row["year"] == 2026 and row["track"] == "ae-2009"
+
+
+def test_cross_session_compare(tmp_path, monkeypatch):
+    """A lap can be compared against a lap from another session at the same track
+    and year, but a different track is rejected."""
+    monkeypatch.setenv("WORKSPACE_SESSIONS_DIR", str(tmp_path))
+    from workspace.web.app import create_app
+    client = create_app().test_client()
+
+    def record(track):
+        port = _free_udp_port()
+        assert client.post("/api/record/start",
+                           json={"port": port, "track": track}).status_code == 200
+        f1_sim.simulate(dest=("127.0.0.1", port), laps=3, hz=240, warmup=0.3)
+        time.sleep(0.3)
+        client.post("/api/record/stop")
+
+    record("ae-2009")
+    record("ae-2009")
+    record("br-1940")
+    sess = client.get("/api/sessions").get_json()
+    yas = [s["name"] for s in sess if s["track"] == "ae-2009"]
+    bra = next(s["name"] for s in sess if s["track"] == "br-1940")
+    a, b = yas[0], yas[1]
+
+    def first_complete(name):
+        laps = client.get(f"/api/sessions/{name}/laps").get_json()["laps"]
+        return next(lp["lap"] for lp in laps if lp["complete"])
+
+    la, lb = first_complete(a), first_complete(b)
+    # same track + year -> renders a chart
+    ok = client.post(f"/api/sessions/{a}/analyze",
+                     json={"laps": [la, lb], "lapBSession": b})
+    assert ok.status_code == 200 and "net_delta" in ok.get_json()
+    # different track -> rejected
+    bad = client.post(f"/api/sessions/{a}/analyze",
+                      json={"laps": [la, lb], "lapBSession": bra})
+    assert bad.status_code == 400 and "same track" in bad.get_json()["error"]

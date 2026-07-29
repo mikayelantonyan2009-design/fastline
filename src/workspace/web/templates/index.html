@@ -25,6 +25,13 @@
   .panel h2 { margin:0 0 14px; font-size:14px; text-transform:uppercase;
     letter-spacing:.8px; color:var(--muted); }
   .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  /* Lap A / Lap B rows share columns so lap + colour stay put and only the
+     session field extends to the right, regardless of the session name length. */
+  .compare { display:grid; grid-template-columns:max-content max-content minmax(0,1fr);
+             gap:10px 14px; align-items:center; }
+  .compare > label { display:inline-flex; align-items:center; gap:6px; }
+  .compare .sess { min-width:0; }
+  .compare .sess select { flex:1 1 auto; min-width:0; }
   button { border:0; border-radius:8px; padding:10px 18px; font-weight:600;
     font-size:14px; cursor:pointer; color:#fff; background:#21262d; transition:.15s; }
   button:hover:not(:disabled) { filter:brightness(1.2); }
@@ -222,19 +229,18 @@
   <!-- ================= ANALYZE ================= -->
   <section class="panel">
     <h2>Analyze &amp; compare laps</h2>
-    <div class="row">
-      <label>Session
-        <select id="sessionSel"><option value="">— select —</option></select>
-      </label>
-      <button id="refreshBtn" class="ghost">↻ Refresh</button>
-      <button id="renameBtn" class="ghost">✎ Name</button>
+    <div class="compare">
+      <label>Lap A <select id="lapA"></select></label>
+      <input type="color" class="swatch" id="cA" value="#3671C6" title="Lap A line color — click to change">
+      <label class="sess">Session <select id="sessionSel"><option value="">— select —</option></select></label>
+      <label>Lap B <select id="lapB"></select></label>
+      <input type="color" class="swatch" id="cB" value="#FF8000" title="Lap B line color — click to change">
+      <label class="sess">Session <select id="lapBSession" title="Compare against another session — same track & year only"></select></label>
     </div>
     <div class="row" style="margin-top:12px">
-      <label>Lap A <select id="lapA"></select>
-        <input type="color" class="swatch" id="cA" value="#3671C6" title="Lap A line color — click to change"></label>
-      <label>Lap B <select id="lapB"></select>
-        <input type="color" class="swatch" id="cB" value="#FF8000" title="Lap B line color — click to change"></label>
       <button id="analyzeBtn" class="primary" disabled>Generate chart</button>
+      <button id="refreshBtn" class="ghost">↻ Refresh</button>
+      <button id="renameBtn" class="ghost">✎ Name</button>
     </div>
     <div id="lapTableWrap"></div>
     <div id="analyzeErr" class="err"></div>
@@ -379,20 +385,40 @@ async function renameSession(sel){
 $("#renameBtn").onclick = () => renameSession("#sessionSel");
 $("#tvRename").onclick = () => renameSession("#tvSession");
 
+const lapOpts = laps => laps.map(l=>`<option value="${l.lap}">Lap ${l.lap} — ${fmtLap(l.time_s)}${l.complete?"":" (partial)"}</option>`).join("");
+const fetchLaps = async name => ((await (await fetch(`/api/sessions/${encodeURIComponent(name)}/laps`)).json()).laps)||[];
+
+// Lap B may come from another session, but only one at the SAME track and year.
+function fillLapBSessions(aName){
+  const tr=window.__sessTrack[aName], yr=window.__sessYear[aName];
+  const names=Object.keys(window.__sessTrack).filter(n=>window.__sessTrack[n]===tr && window.__sessYear[n]===yr);
+  $("#lapBSession").innerHTML=names.map(n=>`<option value="${n}">${window.__sessLabel[n]?esc(window.__sessLabel[n]):n}</option>`).join("");
+  $("#lapBSession").value=aName;   // default: compare within the same session
+}
+async function loadLapB(){
+  const bName=$("#lapBSession").value; if(!bName){ $("#lapB").innerHTML=""; return; }
+  const laps=await fetchLaps(bName);
+  $("#lapB").innerHTML=lapOpts(laps);
+  const complete=laps.filter(l=>l.complete), same=bName===$("#sessionSel").value;
+  if(same && complete.length>=2) $("#lapB").value=complete[1].lap;        // 2nd-fastest by default
+  else if(complete.length) $("#lapB").value=complete[0].lap;
+  else if(laps.length) $("#lapB").value=laps[0].lap;
+}
+$("#lapBSession").onchange = loadLapB;
+
 $("#sessionSel").onchange = async () => {
   const name = $("#sessionSel").value;
   $("#chartWrap").innerHTML=""; $("#netDelta").textContent=""; $("#analyzeErr").textContent=""; $("#saveChartBtn").hidden=true;
-  $("#lapTableWrap").innerHTML=""; $("#lapA").innerHTML=""; $("#lapB").innerHTML="";
+  $("#lapTableWrap").innerHTML=""; $("#lapA").innerHTML=""; $("#lapB").innerHTML=""; $("#lapBSession").innerHTML="";
   $("#analyzeBtn").disabled = !name;
   if(!name) return;
-  const {laps} = await (await fetch(`/api/sessions/${encodeURIComponent(name)}/laps`)).json();
-  if(!laps || !laps.length){ $("#lapTableWrap").innerHTML='<p class="muted">No lap data.</p>'; return; }
-  // lap picker options
-  const opts = laps.map(l=>`<option value="${l.lap}">Lap ${l.lap} — ${fmtLap(l.time_s)}${l.complete?"":" (partial)"}</option>`).join("");
-  $("#lapA").innerHTML = opts; $("#lapB").innerHTML = opts;
+  const laps = await fetchLaps(name);
+  if(!laps.length){ $("#lapTableWrap").innerHTML='<p class="muted">No lap data.</p>'; return; }
+  $("#lapA").innerHTML = lapOpts(laps);
   const complete = laps.filter(l=>l.complete);   // laps are sorted fastest-first
-  if(complete.length>=2){ $("#lapA").value=complete[0].lap; $("#lapB").value=complete[1].lap; }
-  else if(laps.length>=2){ $("#lapA").value=laps[0].lap; $("#lapB").value=laps[1].lap; }
+  $("#lapA").value = (complete[0]||laps[0]).lap;
+  fillLapBSessions(name);
+  await loadLapB();
   // summary table
   $("#lapTableWrap").innerHTML =
     `<table><thead><tr><th>Lap</th><th>Time</th><th>Samples</th><th>Complete</th></tr></thead><tbody>`
@@ -406,11 +432,14 @@ async function runAnalyze(colors){
   $("#analyzeErr").textContent=""; $("#netDelta").textContent=""; $("#saveChartBtn").hidden=true;
   $("#chartWrap").innerHTML='<p class="muted">Rendering…</p>';
   const body = {laps};
+  const bSess = $("#lapBSession").value;
+  if(bSess && bSess!==name) body.lapBSession = bSess;
   if(colors) body.colors = colors;
   const {ok,data} = await post(`/api/sessions/${encodeURIComponent(name)}/analyze`, body);
   if(!ok){ $("#chartWrap").innerHTML=""; $("#analyzeErr").textContent=data.error||"Failed"; return; }
   const sign = data.net_delta>=0?"+":"";
-  $("#netDelta").innerHTML = `Net delta at line: <span style="color:${data.net_delta>=0?'var(--orange)':'var(--green)'}">${sign}${data.net_delta.toFixed(3)}s</span> &nbsp;<span class="muted">(Lap ${data.lap2} vs Lap ${data.lap1})</span>`;
+  const bWhere = (bSess && bSess!==name) ? ` (${window.__sessLabel[bSess]?esc(window.__sessLabel[bSess]):bSess})` : "";
+  $("#netDelta").innerHTML = `Net delta at line: <span style="color:${data.net_delta>=0?'var(--orange)':'var(--green)'}">${sign}${data.net_delta.toFixed(3)}s</span> &nbsp;<span class="muted">(Lap ${data.lap2}${bWhere} vs Lap ${data.lap1})</span>`;
   $("#chartWrap").innerHTML = `<img src="${data.image}" alt="telemetry overlay">`;
   const lbl=(window.__sessLabel&&window.__sessLabel[name])||name.replace(/\.csv$/,"");
   window.__lastChart={url:data.image, file:lbl.replace(/[^\w.-]+/g,"_")+`_lap${data.lap1}_vs_lap${data.lap2}.png`};
