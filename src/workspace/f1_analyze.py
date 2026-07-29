@@ -130,43 +130,63 @@ def pick_laps(summary, laps=None):
     return int(complete["lap"].iloc[0]), int(complete["lap"].iloc[1])
 
 
-def build_figure(df, lap1_n, lap2_n, colors=DEFAULT_COLORS, corners=None):
+def _smooth(series, n, tight=False):
+    """Take the integer-quantisation 'stairs' out of a channel with a light centred
+    rolling mean, sized to the lap's sample count so corner detail is kept. `tight`
+    uses a smaller window for on/off channels (throttle/brake) to preserve edges."""
+    w = min(41, max(5, n // (600 if tight else 200)))
+    return series.rolling(w, center=True, min_periods=1).mean()
+
+
+def build_figure(sources, laps, colors=DEFAULT_COLORS, corners=None, labels=None):
     """Build the 6-panel engineer overlay comparing two laps.
-    colors is (lap1, lap2) line colors; corners maps turn -> lap fraction
-    (defaults to Interlagos). Returns (figure, info) with the net delta."""
+    sources is (dfA, dfB) — the same dataframe twice for an intra-session compare,
+    or two different sessions' dataframes to compare a lap across sessions.
+    laps is (lapA, lapB); colors is (lapA, lapB) line colors; corners maps turn ->
+    lap fraction; labels are the (lapA, lapB) legend names. Returns (figure, info)."""
     color1, color2 = colors
     corners = corners if corners is not None else CORNER_FRAC
-    A = get_lap(df, lap1_n)
-    B = get_lap(df, lap2_n)
+    dfa, dfb = sources
+    lap1_n, lap2_n = laps
+    la, lb = labels if labels else (f"Lap {lap1_n}", f"Lap {lap2_n}")
+    A = get_lap(dfa, lap1_n)
+    B = get_lap(dfb, lap2_n)
+    if len(A) < 2 or len(B) < 2:
+        raise ValueError("Not enough data for one of the selected laps.")
     d, delta = delta_time(A, B)
 
     fig, ax = plt.subplots(6, 1, figsize=(20, 15), sharex=True,
                            gridspec_kw={"height_ratios": [3, 1.6, 1, 0.7, 1.1, 0.8]})
 
-    ax[0].plot(A["lap_distance_m"], A["speed_kmh"], label=f"Lap {lap1_n}", color=color1)
-    ax[0].plot(B["lap_distance_m"], B["speed_kmh"], label=f"Lap {lap2_n}", color=color2)
+    na, nb = len(A), len(B)
+    ax[0].plot(A["lap_distance_m"], _smooth(A["speed_kmh"], na), label=la, color=color1)
+    ax[0].plot(B["lap_distance_m"], _smooth(B["speed_kmh"], nb), label=lb, color=color2)
     ax[0].set_ylabel("Speed (km/h)")
     ax[0].legend(loc="lower left")
     ax[0].set_title(f"Lap {lap1_n} vs Lap {lap2_n} - your own telemetry", pad=38)
 
     ax[1].plot(d, delta, color="purple")
     ax[1].axhline(0, color="black", lw=0.8)
-    ax[1].set_ylabel(f"Delta (s)\n+ = Lap {lap2_n} behind")
+    ax[1].set_ylabel("Delta (s)")
+    # sign key with the (possibly long) lap/session name — centred above the panel
+    # so it reads at any length and never collides with an axis label.
+    ax[1].annotate(f"+ = {lb} behind", xy=(0.5, 1.0), xycoords="axes fraction",
+                   ha="center", va="bottom", fontsize=9, color="0.4")
     net = float(delta[-1]) if len(delta) else 0.0
     ax[1].annotate(f"net at line: {net:+.3f}s", xy=(0.99, 0.06),
                    xycoords="axes fraction", ha="right",
                    bbox=dict(boxstyle="round", fc="lavender"))
 
-    ax[2].plot(A["lap_distance_m"], A["throttle"] * 100, color=color1)
-    ax[2].plot(B["lap_distance_m"], B["throttle"] * 100, color=color2)
+    ax[2].plot(A["lap_distance_m"], _smooth(A["throttle"], na, tight=True) * 100, color=color1)
+    ax[2].plot(B["lap_distance_m"], _smooth(B["throttle"], nb, tight=True) * 100, color=color2)
     ax[2].set_ylabel("Throttle %")
 
-    ax[3].plot(A["lap_distance_m"], A["brake"] * 100, color=color1)
-    ax[3].plot(B["lap_distance_m"], B["brake"] * 100, color=color2)
+    ax[3].plot(A["lap_distance_m"], _smooth(A["brake"], na, tight=True) * 100, color=color1)
+    ax[3].plot(B["lap_distance_m"], _smooth(B["brake"], nb, tight=True) * 100, color=color2)
     ax[3].set_ylabel("Brake %")   # console F1 gives full analog brake data
 
-    ax[4].plot(A["lap_distance_m"], A["rpm"], color=color1)
-    ax[4].plot(B["lap_distance_m"], B["rpm"], color=color2)
+    ax[4].plot(A["lap_distance_m"], _smooth(A["rpm"], na), color=color1)
+    ax[4].plot(B["lap_distance_m"], _smooth(B["rpm"], nb), color=color2)
     ax[4].set_ylabel("RPM")
 
     ax[5].plot(A["lap_distance_m"], A["gear"], color=color1, drawstyle="steps-post")
@@ -196,9 +216,9 @@ def build_figure(df, lap1_n, lap2_n, colors=DEFAULT_COLORS, corners=None):
     return fig, {"net_delta": net}
 
 
-def render_png(df, lap1_n, lap2_n, colors=DEFAULT_COLORS, corners=None):
+def render_png(sources, laps, colors=DEFAULT_COLORS, corners=None, labels=None):
     """Render the overlay to PNG bytes (used by the web UI). Non-interactive."""
-    fig, info = build_figure(df, lap1_n, lap2_n, colors, corners)
+    fig, info = build_figure(sources, laps, colors, corners, labels)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=RENDER_DPI, bbox_inches="tight")
     plt.close(fig)
@@ -225,7 +245,7 @@ def main():
     except ValueError as e:
         sys.exit(str(e))
 
-    fig, info = build_figure(df, lap1_n, lap2_n)
+    fig, info = build_figure((df, df), (lap1_n, lap2_n))
     out = args.csv.replace(".csv", f"_lap{lap1_n}_vs_lap{lap2_n}.png")
     fig.savefig(out, dpi=150)
     print(f"\nNet delta at line: {info['net_delta']:+.3f}s")
