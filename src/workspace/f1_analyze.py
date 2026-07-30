@@ -32,8 +32,11 @@ YAS_FRAC = {1: 0.0833, 2: 0.0883, 3: 0.1072, 4: 0.153, 5: 0.2777, 6: 0.5068,
 BARCA_FRAC = {1: 0.172, 2: 0.18, 3: 0.188, 4: 0.377, 5: 0.46, 6: 0.538,
               7: 0.547, 8: 0.558, 9: 0.636, 10: 0.752, 11: 0.808, 12: 0.82,
               13: 0.883, 14: 0.941}   # Barcelona, calibrated to braking zones from telemetry
+MELB_FRAC = {1: 0.075, 2: 0.1042, 3: 0.2, 4: 0.225, 5: 0.2625, 6: 0.35,
+             7: 0.375, 8: 0.4125, 9: 0.625, 10: 0.65, 11: 0.775, 12: 0.8125,
+             13: 0.8625, 14: 0.8917}   # Albert Park (arc-length; recalibrate from laps)
 CORNER_FRAC_BY_TRACK = {"br-1940": CORNER_FRAC, "ae-2009": YAS_FRAC,
-                        "es-1991": BARCA_FRAC}
+                        "es-1991": BARCA_FRAC, "au-1953": MELB_FRAC}
 
 
 def corners_for(track):
