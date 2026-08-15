@@ -19,7 +19,33 @@
   header .dot { width:14px; height:14px; border-radius:50%; background:var(--red); }
   header h1 { font-size:18px; margin:0; letter-spacing:.5px; }
   header small { color:var(--muted); margin-left:auto; }
-  main { max-width:1100px; margin:0 auto; padding:24px; display:grid; gap:20px; }
+  main { flex:1 1 auto; min-width:0; max-width:1100px; margin:0 auto; padding:24px; display:grid; gap:20px; }
+  /* ---- sessions sidebar ---- */
+  .shell { display:flex; align-items:flex-start; }
+  .sidebar { flex:0 0 288px; position:sticky; top:0; align-self:stretch;
+    max-height:100vh; overflow-y:auto; padding:22px 15px;
+    border-right:1px solid var(--border); background:#10151c; }
+  .sidebar h2 { margin:0 0 12px; font-size:13px; text-transform:uppercase;
+    letter-spacing:.8px; color:var(--muted); }
+  .sess-list { display:flex; flex-direction:column; gap:8px; }
+  .sess-row { display:flex; align-items:center; gap:8px; padding:9px 10px;
+    background:var(--panel); border:1px solid var(--border); border-radius:10px;
+    cursor:pointer; transition:.12s; }
+  .sess-row:hover { border-color:#4b6b9e; }
+  .sess-row.active { border-color:var(--blue); background:#182233; }
+  .sess-info { flex:1 1 auto; min-width:0; }
+  .sess-name { font-size:13px; font-weight:600; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; }
+  .sess-meta { font-size:11px; color:var(--muted); margin-top:2px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sess-actions { display:flex; gap:4px; flex:0 0 auto; }
+  .icon-btn { padding:5px 8px; font-size:13px; border-radius:7px; background:#21262d;
+    border:1px solid var(--border); color:var(--text); line-height:1; }
+  .icon-btn.danger:hover:not(:disabled) { background:#6e0000; border-color:#8a0000; filter:none; }
+  .sess-empty { color:var(--muted); font-size:12.5px; padding:8px 4px; }
+  @media (max-width:900px){ .shell{flex-direction:column;}
+    .sidebar{flex:none; width:100%; max-height:none; position:static;
+      border-right:0; border-bottom:1px solid var(--border);} }
   .panel { background:var(--panel); border:1px solid var(--border);
     border-radius:12px; padding:20px; }
   .panel h2 { margin:0 0 14px; font-size:14px; text-transform:uppercase;
@@ -115,6 +141,7 @@
   .tv-lbl.num { font-size:10px; font-weight:700; color:#fff; background:#0d1117;
     border:1px solid var(--border); border-radius:20px; min-width:19px; height:17px;
     display:grid; place-items:center; padding:0 3px; }
+  .tv-trackbox.thin .tv-lbl.num { font-size:8px; min-width:14px; height:13px; padding:0 2px; }
   .tv-lbl.sf { font-size:9.5px; font-weight:700; color:#0d1117; background:var(--text);
     border-radius:4px; padding:2px 5px; }
   .tv-lbl.sect { font-size:10px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; }
@@ -145,6 +172,11 @@
   <h1>F1&nbsp;25 TELEMETRY</h1>
   <small id="hostinfo"></small>
 </header>
+<div class="shell">
+  <aside class="sidebar">
+    <h2>Recorded sessions</h2>
+    <div id="sessList" class="sess-list"></div>
+  </aside>
 <main>
 
   <!-- ================= RECORD ================= -->
@@ -235,7 +267,7 @@
       <label class="sess">Session <select id="sessionSel"><option value="">— select —</option></select></label>
       <label>Lap B <select id="lapB"></select></label>
       <input type="color" class="swatch" id="cB" value="#FF8000" title="Lap B line color — click to change">
-      <label class="sess">Session <select id="lapBSession" title="Compare against another session — same track & year only"></select></label>
+      <label class="sess">Session <select id="lapBSession" title="Compare against any recorded session"></select></label>
     </div>
     <div class="row" style="margin-top:12px">
       <button id="analyzeBtn" class="primary" disabled>Generate chart</button>
@@ -250,6 +282,7 @@
   </section>
 
 </main>
+</div>
 
 <!-- ================= SEASON PICKER ================= -->
 <div class="modal-overlay" id="yrOverlay" hidden>
@@ -271,6 +304,18 @@
     <p class="muted" id="tpHint">Choose the circuit you're recording at.</p>
     <div class="tp-grid" id="tpGrid"></div>
     <button class="ghost tp-cancel" id="tpCancel">Cancel</button>
+  </div>
+</div>
+
+<!-- ================= CONFIRM DIALOG ================= -->
+<div class="modal-overlay" id="cfOverlay" hidden>
+  <div class="modal">
+    <h3 id="cfTitle">Are you sure?</h3>
+    <p id="cfMsg" class="muted"></p>
+    <div class="row" style="justify-content:flex-end; margin-top:22px; gap:10px">
+      <button class="ghost" id="cfCancel">Cancel</button>
+      <button class="stop" id="cfOk">Delete</button>
+    </div>
   </div>
 </div>
 
@@ -360,8 +405,9 @@ setInterval(pollStatus, 1000); pollStatus();
 // ---- sessions & analysis --------------------------------------------
 async function loadSessions(){
   const list = await (await fetch("/api/sessions")).json();
-  window.__sessTrack = {}; window.__sessLabel = {}; window.__sessYear = {};
+  window.__sessTrack = {}; window.__sessLabel = {}; window.__sessYear = {}; window.__sessList = list;
   list.forEach(s => { window.__sessTrack[s.name] = s.track||null; window.__sessLabel[s.name] = s.label||null; window.__sessYear[s.name] = s.year||null; });
+  renderSessions(list);
   const opts = '<option value="">— select —</option>' +
     list.map(s=>`<option value="${s.name}">${s.label ? esc(s.label) : s.name}</option>`).join("");
   for(const id of ["#sessionSel","#tvSession"]){
@@ -385,13 +431,67 @@ async function renameSession(sel){
 $("#renameBtn").onclick = () => renameSession("#sessionSel");
 $("#tvRename").onclick = () => renameSession("#tvSession");
 
+// ---- sessions sidebar: list + rename/delete with confirm ----
+function renderSessions(list){
+  const box=$("#sessList");
+  if(!list || !list.length){ box.innerHTML='<div class="sess-empty">No sessions recorded yet.</div>'; return; }
+  const active=$("#tvSession").value;
+  box.innerHTML=list.map(s=>{
+    const label=s.label?esc(s.label):esc(s.name);
+    const when=s.modified?new Date(s.modified*1000).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):"";
+    const meta=[s.track||"—", s.year||"", when].filter(Boolean).join(" · ");
+    return `<div class="sess-row${s.name===active?' active':''}" data-name="${esc(s.name)}">
+      <div class="sess-info"><div class="sess-name">${label}</div><div class="sess-meta">${esc(meta)}</div></div>
+      <div class="sess-actions">
+        <button class="icon-btn" data-act="rename" title="Rename">✎</button>
+        <button class="icon-btn danger" data-act="delete" title="Delete">🗑</button>
+      </div></div>`;
+  }).join("");
+}
+$("#sessList").onclick = async e => {
+  const row=e.target.closest(".sess-row"); if(!row) return;
+  const name=row.dataset.name;
+  const act=e.target.closest("[data-act]")?.dataset.act;
+  if(act==="rename"){ await renameByName(name); return; }
+  if(act==="delete"){ await deleteSession(name); return; }
+  const sel=$("#tvSession"); if(sel.value!==name){ sel.value=name; sel.dispatchEvent(new Event("change")); }
+  renderSessions(window.__sessList);
+};
+$("#tvSession").addEventListener("change", () => renderSessions(window.__sessList));
+async function renameByName(name){
+  const cur=(window.__sessLabel&&window.__sessLabel[name])||"";
+  const label=prompt("Name this session (leave blank to clear):", cur);
+  if(label===null) return;
+  const {ok,data}=await post(`/api/sessions/${encodeURIComponent(name)}/name`,{name:label});
+  if(!ok){ alert(data.error||"Could not rename"); return; }
+  await loadSessions();
+}
+async function deleteSession(name){
+  const label=(window.__sessLabel&&window.__sessLabel[name])||name;
+  const yes=await askConfirm("Delete session?",
+    `Are you sure you want to delete "${label}"? This permanently removes the recording and can't be undone.`, "Delete");
+  if(!yes) return;
+  const {ok,data}=await post(`/api/sessions/${encodeURIComponent(name)}/delete`,{});
+  if(!ok){ alert(data.error||"Could not delete"); return; }
+  await loadSessions();
+}
+function askConfirm(title,msg,okLabel){
+  return new Promise(res=>{
+    $("#cfTitle").textContent=title; $("#cfMsg").textContent=msg; $("#cfOk").textContent=okLabel||"Confirm";
+    const ov=$("#cfOverlay"); ov.hidden=false;
+    const done=v=>{ ov.hidden=true; $("#cfOk").onclick=null; $("#cfCancel").onclick=null; ov.onclick=null; res(v); };
+    $("#cfOk").onclick=()=>done(true);
+    $("#cfCancel").onclick=()=>done(false);
+    ov.onclick=e=>{ if(e.target.id==="cfOverlay") done(false); };
+  });
+}
+
 const lapOpts = laps => laps.map(l=>`<option value="${l.lap}">Lap ${l.lap} — ${fmtLap(l.time_s)}${l.complete?"":" (partial)"}</option>`).join("");
 const fetchLaps = async name => ((await (await fetch(`/api/sessions/${encodeURIComponent(name)}/laps`)).json()).laps)||[];
 
-// Lap B may come from another session, but only one at the SAME track and year.
+// Lap B may come from ANY recorded session (different track/year allowed).
 function fillLapBSessions(aName){
-  const tr=window.__sessTrack[aName], yr=window.__sessYear[aName];
-  const names=Object.keys(window.__sessTrack).filter(n=>window.__sessTrack[n]===tr && window.__sessYear[n]===yr);
+  const names=Object.keys(window.__sessTrack);
   $("#lapBSession").innerHTML=names.map(n=>`<option value="${n}">${window.__sessLabel[n]?esc(window.__sessLabel[n]):n}</option>`).join("");
   $("#lapBSession").value=aName;   // default: compare within the same session
 }
@@ -485,14 +585,44 @@ $("#analyzeBtn").onclick = () => {
                 2026:{speedTrap:25, otDet:200, otAct:213,
                       smZones:[[223,274],[62,80],[108,123],[148,171]]}}};})();
   const MELB=(()=>{const line=[[553,497],[542,497],[531,497],[520,497],[509,498],[497,498],[486,498],[475,498],[464,498],[453,498],[442,497],[430,497],[419,497],[408,497],[397,497],[386,496],[380,488],[376,477],[370,468],[363,459],[355,452],[345,446],[335,442],[324,440],[313,440],[301,441],[290,441],[279,441],[268,442],[257,442],[246,442],[234,441],[223,441],[212,441],[201,440],[190,438],[179,437],[168,436],[157,434],[146,433],[135,431],[124,428],[113,425],[102,422],[91,420],[81,417],[70,414],[59,410],[49,406],[45,396],[50,387],[56,377],[63,368],[69,359],[75,349],[78,339],[73,329],[65,321],[57,314],[48,306],[40,298],[32,291],[24,283],[16,276],[7,268],[1,260],[0,249],[2,237],[3,226],[5,215],[7,204],[9,193],[10,182],[13,171],[16,161],[21,151],[25,140],[29,130],[34,120],[38,109],[43,99],[46,89],[49,78],[52,67],[55,57],[63,50],[75,50],[86,49],[97,47],[107,42],[116,36],[124,29],[133,21],[142,14],[152,9],[162,5],[173,2],[184,1],[195,0],[206,1],[217,3],[228,6],[238,11],[247,17],[257,23],[266,29],[275,35],[284,42],[293,48],[303,54],[312,61],[321,68],[328,76],[333,86],[337,96],[339,107],[340,118],[342,130],[346,140],[351,150],[357,159],[364,168],[370,178],[376,187],[383,196],[389,205],[395,214],[402,223],[410,231],[418,239],[426,247],[435,253],[444,260],[454,265],[464,271],[474,275],[484,279],[495,282],[506,285],[517,287],[528,289],[539,289],[550,289],[561,288],[573,288],[584,287],[595,286],[606,285],[617,284],[628,281],[638,276],[647,270],[654,262],[662,254],[670,245],[678,238],[688,234],[699,231],[710,230],[721,229],[733,229],[744,228],[755,227],[766,226],[777,225],[788,224],[799,223],[810,224],[822,224],[833,226],[843,229],[854,234],[864,238],[874,243],[884,248],[894,253],[903,259],[913,264],[923,270],[933,275],[943,280],[952,286],[962,291],[972,297],[982,302],[991,308],[1000,315],[999,325],[994,335],[990,345],[986,355],[981,366],[977,376],[973,386],[968,397],[964,407],[959,417],[954,427],[946,435],[936,438],[924,440],[914,437],[903,434],[892,431],[881,428],[871,424],[860,421],[849,419],[838,416],[827,414],[817,416],[816,427],[816,438],[817,449],[818,460],[818,471],[815,482],[808,491],[799,496],[788,498],[777,498],[766,498],[754,498],[743,498],[732,498],[721,498],[710,498],[698,498],[687,498],[676,498],[665,498],[654,498],[643,498],[631,497],[620,497],[609,497],[598,497],[587,497],[576,497],[564,497]];
-    const ci=[18, 25, 48, 54, 63, 84, 90, 99, 150, 156, 186, 195, 207, 214];
+    const ci=[15, 21, 49, 55, 65, 84, 88, 100, 149, 155, 186, 198, 210, 217];
     return {id:"au-1953",name:"Albert Park",country:"Australia",flag:"🇦🇺",len:5278,turns:14,years:[2025,2026],
       line, corners:ci.map((idx,k)=>({t:k+1,name:"",idx})), sec1End:79, sec2End:145,
+      cdist:[0.0747,0.0872,0.2113,0.2367,0.2702,0.3594,0.3663,0.4163,0.621,0.6596,0.7885,0.8366,0.8857,0.9041],
       hints:{NUMXY:{1:[336,493],2:[294,399],3:[21,454],13:[854,377],14:[772,454]}},
       overlays:{2025:{speedTrap:8, drsDet:[86, 205], drsZones:[[219, 255],[24, 48],[116, 146, -1],[158, 184]]},
                 2026:{speedTrap:8, otDet:212, otAct:214,
                       smZones:[[219,255,1],[24,48,1],[70,84,1],[104,148,-1],[158,184]]}}};})();
-  const TRACKS=[INTER,YAS,BARCA,MELB], BYID={}; TRACKS.forEach(t=>BYID[t.id]=t);
+  const SHANGHAI=(()=>{const line=[[379,301],[385,285],[392,269],[398,253],[405,238],[411,222],[418,205],[424,189],[431,174],[438,158],[444,142],[451,127],[457,110],[465,94],[471,78],[477,63],[485,47],[493,32],[504,19],[518,10],[533,3],[550,0],[566,2],[582,7],[596,16],[606,28],[613,43],[613,59],[608,73],[597,83],[584,86],[570,80],[558,70],[545,62],[531,62],[520,70],[516,83],[520,98],[528,112],[540,123],[555,132],[571,135],[588,136],[605,135],[622,133],[640,131],[657,130],[674,129],[691,128],[709,127],[726,124],[743,122],[760,121],[777,120],[794,121],[811,124],[827,129],[844,134],[860,139],[877,144],[893,149],[910,154],[926,159],[942,165],[953,173],[957,183],[950,194],[937,201],[920,205],[904,209],[887,210],[869,211],[852,210],[835,207],[818,205],[801,204],[783,202],[766,200],[749,198],[732,197],[715,198],[698,201],[682,206],[668,215],[655,226],[645,239],[637,254],[632,270],[630,286],[631,304],[634,320],[640,336],[648,351],[656,366],[664,382],[670,398],[673,414],[673,430],[668,446],[659,461],[647,471],[632,478],[614,480],[598,480],[581,478],[564,475],[548,476],[534,481],[527,493],[526,508],[530,524],[536,539],[546,552],[560,560],[576,563],[593,565],[609,567],[627,568],[644,570],[661,572],[678,573],[695,575],[713,576],[730,578],[747,579],[764,580],[781,581],[799,583],[816,584],[833,586],[850,587],[867,588],[884,588],[897,584],[904,574],[905,559],[906,543],[912,530],[925,522],[940,520],[956,523],[972,530],[985,541],[994,555],[1000,571],[1000,587],[996,603],[989,618],[978,632],[966,643],[951,652],[935,658],[919,661],[902,662],[885,662],[867,661],[850,660],[833,659],[816,658],[799,657],[781,657],[764,656],[747,655],[730,654],[713,653],[695,652],[678,652],[661,651],[644,650],[627,649],[609,648],[592,647],[575,647],[558,646],[540,645],[523,644],[506,644],[489,643],[472,642],[454,641],[437,641],[420,640],[403,639],[386,638],[368,638],[351,637],[334,636],[317,635],[300,634],[282,633],[265,632],[248,631],[231,630],[214,630],[196,629],[179,628],[162,628],[145,627],[128,626],[110,626],[93,624],[76,624],[59,623],[41,623],[24,622],[9,619],[0,612],[3,602],[14,594],[29,588],[46,584],[63,583],[80,583],[97,582],[114,582],[132,582],[149,582],[166,582],[183,582],[200,582],[218,582],[235,581],[250,578],[263,569],[271,555],[278,539],[285,523],[291,508],[299,492],[305,476],[312,460],[319,444],[325,428],[332,412],[338,397],[345,381],[351,364],[358,348],[365,333],[371,317]];
+    const ci=[26,29,35,41,54,65,84,99,107,112,133,138,144,206,211,222];
+    return {id:"cn-2004",name:"Shanghai",country:"China",flag:"🇨🇳",len:5451,turns:16,years:[2025,2026],
+      line, corners:ci.map((idx,k)=>({t:k+1,name:"",idx})), sec1End:58, sec2End:128,
+      cdist:[0.1102,0.1216,0.1446,0.1634,0.2229,0.2933,0.3472,0.4103,0.4431,0.4734,0.5512,0.5693,0.5942,0.8855,0.904,0.9517],
+      hints:{NUMXY:{1:[592,-16],2:[651,64],3:[562,103],4:[560,168],5:[796,94],6:[983,187],7:[636,206],8:[681,475],9:[512,464],10:[530,568],11:[912,601],12:[904,498],13:[969,571],14:[-30,620],15:[68,550],16:[243,548]}},
+      overlays:{2025:{speedTrap:195, drsDet:[137,220], drsZones:[[232,15],[170,205]]},
+                2026:{speedTrap:195, otDet:223, otAct:229, smZones:[[229,15],[46,62,1],[119,130],[155,202]]}}};})();
+  const SUZUKA=(()=>{const line=[[775,188],[783,197],[790,206],[797,214],[804,223],[812,232],[819,241],[826,250],[833,259],[840,267],[848,276],[855,285],[862,294],[870,303],[877,312],[884,320],[892,329],[899,338],[906,347],[913,356],[921,364],[928,373],[935,382],[942,391],[950,400],[957,409],[964,418],[971,426],[979,435],[986,444],[992,454],[997,464],[1000,474],[1000,485],[998,497],[995,507],[990,518],[983,526],[974,531],[964,533],[954,530],[945,524],[937,516],[931,506],[925,497],[918,487],[912,478],[906,468],[900,458],[893,450],[884,443],[874,438],[863,436],[852,435],[841,433],[831,429],[823,421],[818,412],[814,401],[811,390],[807,379],[803,369],[797,360],[788,353],[778,348],[767,346],[756,345],[745,344],[734,341],[724,337],[715,330],[709,321],[706,310],[705,299],[706,288],[709,277],[713,267],[716,256],[718,245],[717,234],[713,224],[706,215],[697,209],[687,203],[677,198],[666,194],[655,190],[644,188],[633,188],[622,188],[611,190],[600,193],[589,198],[579,203],[570,210],[561,217],[553,225],[546,234],[538,242],[531,251],[524,260],[516,269],[509,277],[501,285],[491,289],[480,292],[469,293],[458,294],[446,295],[435,296],[425,295],[417,290],[411,281],[408,270],[406,259],[403,248],[401,237],[398,226],[396,214],[395,203],[393,192],[391,181],[389,169],[387,158],[385,147],[385,136],[386,124],[390,114],[394,103],[398,92],[401,82],[400,74],[394,70],[386,72],[379,80],[373,89],[367,99],[361,109],[355,119],[349,128],[342,137],[334,145],[325,153],[316,159],[305,163],[294,166],[283,168],[272,169],[261,170],[249,169],[238,168],[227,165],[216,162],[205,159],[194,155],[184,150],[173,145],[164,140],[154,133],[146,126],[137,118],[130,109],[123,100],[117,90],[112,80],[108,69],[104,59],[100,48],[96,37],[91,27],[85,17],[78,9],[69,3],[58,0],[47,0],[36,1],[25,4],[15,9],[7,16],[2,25],[0,36],[2,46],[7,56],[14,65],[22,73],[30,80],[39,88],[48,95],[57,102],[66,109],[75,116],[85,122],[94,129],[104,134],[114,140],[124,145],[134,150],[145,155],[155,160],[166,164],[176,168],[187,172],[198,176],[209,180],[219,184],[230,188],[241,192],[251,196],[262,200],[273,204],[284,208],[294,211],[305,215],[316,218],[327,222],[338,225],[349,229],[360,233],[370,236],[381,240],[392,244],[403,248],[413,252],[424,254],[436,254],[447,252],[458,249],[468,245],[479,240],[489,234],[498,228],[507,222],[516,214],[525,207],[533,199],[541,191],[550,183],[558,175],[567,168],[575,160],[584,153],[593,147],[603,144],[612,145],[622,149],[631,149],[641,146],[650,140],[660,134],[671,131],[682,130],[693,131],[704,133],[715,137],[725,142],[735,148],[744,155],[752,162],[760,171],[768,179]];
+    const ci=[32,38,50,55,63,70,79,103,111,125,132,148,172,179,224,241,245,249];
+    return {id:"jp-1962",name:"Suzuka",country:"Japan",flag:"🇯🇵",len:5807,turns:18,years:[2025,2026],
+      line, corners:ci.map((idx,k)=>({t:k+1,name:"",idx})), sec1End:83, sec2End:203,
+      hints:{NUMXY:{1:[968,479],2:[984,561],3:[900,417],4:[850,403],5:[806,326],6:[693,350],7:[746,226],8:[516,310],9:[397,312],10:[417,138],11:[404,41],12:[261,138],13:[82,-24],14:[32,36],15:[434,222],16:[578,121],17:[626,118],18:[665,102]},SECXY:{3:[620,72]}},
+      overlays:{2025:{speedTrap:230, drsDet:[228], drsZones:[[259,28]]},
+                2026:{speedTrap:230, otDet:246, otAct:251, smZones:[[257,27],[184,216]]}}};})();
+  const BAHRAIN=(()=>{const line=[[605,647],[586,647],[567,646],[548,646],[529,645],[510,645],[491,644],[472,644],[453,644],[434,644],[416,644],[397,645],[378,645],[359,645],[340,645],[321,646],[302,646],[283,646],[264,646],[245,647],[226,647],[207,647],[188,647],[169,647],[150,647],[131,647],[112,647],[93,647],[74,647],[55,647],[36,647],[18,645],[5,639],[0,627],[5,612],[15,597],[24,581],[27,564],[26,546],[21,528],[15,510],[11,492],[8,473],[9,454],[11,435],[13,417],[16,398],[19,379],[22,360],[25,342],[27,323],[30,304],[33,285],[36,267],[39,248],[42,229],[45,210],[47,192],[50,173],[53,154],[56,135],[59,117],[62,98],[65,79],[67,60],[71,42],[75,24],[83,9],[96,0],[112,0],[128,8],[142,20],[155,34],[167,48],[179,63],[192,77],[205,90],[219,103],[233,116],[248,127],[264,138],[281,146],[297,155],[312,165],[324,179],[331,196],[333,214],[332,233],[333,251],[337,269],[345,286],[357,300],[371,312],[386,324],[401,335],[417,346],[432,357],[447,368],[462,380],[475,393],[480,407],[475,418],[461,425],[443,426],[424,424],[405,422],[386,420],[368,417],[349,415],[330,413],[311,410],[292,408],[274,406],[255,404],[236,402],[217,402],[199,404],[181,409],[166,419],[153,432],[145,447],[146,460],[157,469],[174,473],[193,475],[211,477],[230,479],[249,480],[268,481],[287,481],[306,481],[325,482],[344,482],[363,482],[382,482],[401,483],[420,483],[439,483],[458,483],[477,483],[496,483],[515,483],[533,483],[552,483],[571,483],[590,483],[609,483],[628,483],[647,483],[666,483],[685,483],[704,481],[722,477],[736,468],[746,454],[750,437],[748,419],[743,401],[735,384],[725,368],[712,354],[698,342],[681,333],[664,325],[647,318],[629,311],[612,303],[596,294],[582,282],[570,267],[561,251],[555,233],[553,215],[554,196],[558,178],[565,160],[572,142],[580,125],[588,108],[596,91],[607,76],[620,63],[636,55],[652,53],[668,59],[682,71],[694,86],[704,102],[714,118],[724,134],[734,150],[744,166],[754,182],[764,198],[774,215],[784,231],[794,247],[803,263],[813,279],[823,295],[833,311],[843,328],[853,344],[863,360],[873,376],[883,392],[893,408],[903,424],[913,441],[923,457],[932,473],[942,489],[952,505],[962,521],[972,538],[983,554],[995,571],[1007,590],[1011,608],[1002,622],[983,630],[964,637],[946,643],[927,646],[908,648],[889,648],[870,648],[851,649],[833,649],[814,649],[795,649],[776,649],[757,649],[738,650],[719,650],[700,650],[681,649],[662,649],[643,648],[624,648]];
+    const ci=[32,37,42,68,84,86,92,100,116,121,153,170,183,216,222];
+    return {id:"bh-2002",name:"Bahrain",country:"Bahrain",flag:"🇧🇭",len:5412,turns:15,years:[2025,2026],
+      line, corners:ci.map((idx,k)=>({t:k+1,name:"",idx})), sec1End:80, sec2End:174,
+      hints:{NUMXY:{1:[8,670],2:[62,545],3:[38,471],4:[105,29],5:[255,175],6:[365,190],7:[330,320],8:[510,409],9:[190,379],10:[121,472],11:[756,488],12:[589,239],13:[656,23],14:[963,579],15:[953,670]},SECXY:{1:[175,155]}},
+      overlays:{2025:{speedTrap:24, drsDet:[28,114,216], drsZones:[[230,29],[44,64],[123,151]]},
+                2026:{speedTrap:24, otDet:219, otAct:221, smZones:[[224,31,1],[44,64],[126,148],[189,212]]}}};})();
+  const SAUDI=(()=>{const line=[[759,172],[751,180],[743,187],[735,193],[727,200],[720,208],[712,215],[703,222],[695,229],[688,235],[680,243],[672,250],[664,257],[656,264],[649,271],[640,278],[633,285],[627,293],[629,303],[634,313],[629,321],[619,324],[609,326],[598,326],[588,328],[577,330],[567,335],[558,340],[549,345],[541,351],[532,357],[522,363],[513,368],[505,374],[496,380],[487,385],[478,391],[470,398],[469,408],[468,419],[464,428],[458,437],[449,443],[440,448],[429,451],[419,451],[408,448],[398,448],[388,451],[378,456],[370,462],[361,468],[355,477],[352,487],[349,497],[343,505],[334,510],[323,514],[314,518],[304,522],[294,523],[284,521],[274,515],[266,508],[258,501],[248,500],[238,501],[228,503],[217,506],[207,507],[196,507],[186,509],[175,511],[165,513],[155,516],[145,520],[135,524],[126,528],[116,533],[106,537],[97,542],[88,547],[78,552],[69,556],[59,561],[49,565],[40,570],[30,575],[21,579],[12,584],[4,592],[0,601],[1,611],[7,620],[15,626],[25,629],[36,627],[46,623],[55,618],[62,610],[69,602],[75,594],[82,584],[89,577],[97,571],[105,564],[114,558],[124,554],[134,551],[144,550],[155,549],[166,549],[176,549],[186,550],[197,550],[208,548],[217,544],[227,541],[238,543],[246,549],[254,556],[263,561],[273,565],[284,564],[293,561],[304,558],[313,554],[322,550],[331,544],[341,538],[349,531],[356,523],[363,516],[370,508],[377,500],[385,493],[393,487],[402,480],[412,475],[421,471],[431,467],[441,464],[450,459],[460,455],[468,449],[477,442],[485,435],[492,427],[498,418],[504,410],[510,401],[516,392],[524,385],[532,378],[540,372],[548,365],[558,360],[567,356],[577,351],[586,347],[596,344],[607,341],[617,338],[627,337],[638,335],[646,328],[651,319],[654,309],[658,300],[665,290],[673,285],[682,278],[691,272],[700,267],[711,266],[721,266],[731,267],[742,268],[753,269],[763,269],[773,270],[784,271],[795,270],[805,269],[816,266],[826,263],[835,259],[844,254],[853,248],[862,241],[870,235],[879,229],[887,223],[895,215],[903,209],[910,201],[918,193],[924,185],[931,177],[937,168],[943,159],[948,150],[952,140],[958,131],[961,121],[964,111],[968,101],[969,91],[972,80],[974,70],[976,59],[978,50],[980,39],[979,29],[971,21],[961,20],[952,25],[943,31],[935,38],[926,43],[918,49],[909,56],[900,61],[892,67],[882,73],[874,79],[866,85],[856,92],[848,98],[840,104],[831,110],[823,117],[815,124],[807,130],[799,138],[790,144],[783,152],[775,158],[767,165],[759,172]];
+    const ci=[16,18,25,37,41,48,51,53,60,64,66,72,86,103,114,117,122,127,137,145,155,165,169,173,185,201,214];
+    return {id:"sa-2021",name:"Saudi Arabia",country:"Saudi Arabia",flag:"🇸🇦",len:6174,turns:27,years:[2025,2026], lw:0.42,
+      line, corners:ci.map((idx,k)=>({t:k+1,name:"",idx})), sec1End:79, sec2End:162,
+      hints:{NUMXY:{1:[609,283],2:[612,320],3:[588,308],4:[460,376],5:[439,423],6:[395,426],7:[337,464],8:[328,488],9:[298,498],10:[262,477],11:[221,484],12:[184,485],13:[24,601],14:[125,573],15:[199,574],16:[240,561],17:[266,588],18:[324,574],19:[412,502],20:[466,463],21:[572,361],22:[665,344],23:[685,303],24:[717,284],25:[799,246],26:[931,133],27:[972,45]},SECXY:{1:[428,333],3:[787,340]}},
+      overlays:{2025:{speedTrap:205, drsDet:[123,164,217], drsZones:[[222,15,1],[140,163,1],[179,209,1]]},
+                2026:{speedTrap:205, otDet:217, otAct:224, smZones:[[222,15,1],[130,163,1],[76,84,1],[179,209,1]]}}};})();
+  const TRACKS=[INTER,YAS,BARCA,MELB,SHANGHAI,SUZUKA,BAHRAIN,SAUDI], BYID={}; TRACKS.forEach(t=>BYID[t.id]=t);
   let A,LINE,N,CORNERS,SEC1_END,SEC2_END,HINTS;
   function useGeom(tr){A=tr;LINE=tr.line;N=LINE.length;CORNERS=tr.corners;SEC1_END=tr.sec1End;SEC2_END=tr.sec2End;HINTS=tr.hints||{};}
   useGeom(INTER);
@@ -553,17 +683,19 @@ $("#analyzeBtn").onclick = () => {
   function drawTrack(){
     const {ctx,w,h}=L.tvBase; ctx.clearRect(0,0,w,h);
     proj=makeProj(w,h,44); const Q=LINE.map(proj);
-    ctx.lineJoin="round"; ctx.lineCap="round"; ctx.strokeStyle=css("--track"); ctx.lineWidth=14;
+    const kw=A.lw||1; $("#tvTrackbox").classList.toggle("thin", !!A.lw);
+    ctx.lineJoin="round"; ctx.lineCap="round"; ctx.strokeStyle=css("--track"); ctx.lineWidth=14*kw;
     ctx.beginPath(); pathSmooth(ctx,Q,true); ctx.stroke();
-    ctx.lineCap="butt"; ctx.lineWidth=8;
+    ctx.lineCap="butt"; ctx.lineWidth=8*kw;
     // each earlier sector runs a few points past its boundary so it underlaps the seam —
     // no gap at sharp corners where the colour changes, while the visible split stays exact.
     [[0,SEC1_END+3,secVar(1)],[SEC1_END,SEC2_END+3,secVar(2)],[SEC2_END,N,secVar(3)]].forEach(([a,b,v])=>{
       const seg=[]; for(let i=a;i<=b;i++) seg.push(Q[i%N]);
       ctx.strokeStyle=css(v); ctx.beginPath(); pathSmooth(ctx,seg,false); ctx.stroke(); });
     const s0=Q[0],s1=Q[1],an=Math.atan2(s1[1]-s0[1],s1[0]-s0[0])+Math.PI/2;
-    ctx.lineCap="round"; ctx.strokeStyle=css("--text"); ctx.lineWidth=3;
-    ctx.beginPath(); ctx.moveTo(s0[0]+Math.cos(an)*9,s0[1]+Math.sin(an)*9); ctx.lineTo(s0[0]-Math.cos(an)*9,s0[1]-Math.sin(an)*9); ctx.stroke();
+    ctx.lineCap="round"; ctx.strokeStyle=css("--text"); ctx.lineWidth=3*kw;
+    const sfo=Math.max(7,9*kw);
+    ctx.beginPath(); ctx.moveTo(s0[0]+Math.cos(an)*sfo,s0[1]+Math.sin(an)*sfo); ctx.lineTo(s0[0]-Math.cos(an)*sfo,s0[1]-Math.sin(an)*sfo); ctx.stroke();
     placeLabels(Q);
     drawOverlays(Q);
   }
@@ -591,7 +723,7 @@ $("#analyzeBtn").onclick = () => {
       let nx=-(b[1]-a[1]),ny=b[0]-a[0]; const m=Math.hypot(nx,ny)||1; nx/=m; ny/=m;
       return [Q[j][0]+nx*off,Q[j][1]+ny*off]; };
     const zones=(list,col)=>{ ctx.lineCap="round"; ctx.strokeStyle=col; ctx.lineWidth=3; ctx.setLineDash([6,5]);
-      (list||[]).forEach(z=>{ const a=z[0],b=z[1],s=z[2]; ctx.beginPath();
+      (list||[]).forEach(z=>{ const a=z[0],b=z[1]<z[0]?z[1]+N:z[1],s=z[2]; ctx.beginPath();
         for(let i=a;i<=b;i++){ const [x,y]= s?outFix(i,s*11):out(i,11); i===a?ctx.moveTo(x,y):ctx.lineTo(x,y); } ctx.stroke(); });
       ctx.setLineDash([]); };
     zones(ov.drsZones,"#39d353");            // 2025 DRS zones (green)
@@ -792,9 +924,9 @@ $("#analyzeBtn").onclick = () => {
     let a=1e9,b=1e9,c=-1e9,d=-1e9; Ln.forEach(p=>{a=Math.min(a,p[0]);b=Math.min(b,p[1]);c=Math.max(c,p[0]);d=Math.max(d,p[1]);});
     const s=Math.min((w-2*pad)/(c-a),(h-2*pad)/(d-b)), ox=pad+((w-2*pad)-(c-a)*s)/2, oy=pad+((h-2*pad)-(d-b)*s)/2;
     const Q=Ln.map(p=>[ox+(p[0]-a)*s,oy+(p[1]-b)*s]);
-    ctx.clearRect(0,0,w,h); ctx.lineJoin="round"; ctx.lineCap="round";
-    ctx.strokeStyle=css("--track"); ctx.lineWidth=6; ctx.beginPath(); pathSmooth(ctx,Q,true); ctx.stroke();
-    ctx.lineCap="butt"; ctx.lineWidth=3.4;
+    ctx.clearRect(0,0,w,h); ctx.lineJoin="round"; ctx.lineCap="round"; const kw=tr.lw||1;
+    ctx.strokeStyle=css("--track"); ctx.lineWidth=6*kw; ctx.beginPath(); pathSmooth(ctx,Q,true); ctx.stroke();
+    ctx.lineCap="butt"; ctx.lineWidth=3.4*kw;
     [[0,tr.sec1End,secVar(1)],[tr.sec1End,tr.sec2End,secVar(2)],[tr.sec2End,n,secVar(3)]].forEach(([x,y,v])=>{
       const seg=[]; for(let i=x;i<=y;i++) seg.push(Q[i%n]);
       ctx.strokeStyle=css(v); ctx.beginPath(); pathSmooth(ctx,seg,false); ctx.stroke(); });

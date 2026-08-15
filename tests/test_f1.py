@@ -248,8 +248,8 @@ def test_session_remembers_year(tmp_path, monkeypatch):
 
 
 def test_cross_session_compare(tmp_path, monkeypatch):
-    """A lap can be compared against a lap from another session at the same track
-    and year, but a different track is rejected."""
+    """A lap can be compared against a lap from any other recorded session,
+    including one from a different track."""
     monkeypatch.setenv("WORKSPACE_SESSIONS_DIR", str(tmp_path))
     from workspace.web.app import create_app
     client = create_app().test_client()
@@ -279,7 +279,30 @@ def test_cross_session_compare(tmp_path, monkeypatch):
     ok = client.post(f"/api/sessions/{a}/analyze",
                      json={"laps": [la, lb], "lapBSession": b})
     assert ok.status_code == 200 and "net_delta" in ok.get_json()
-    # different track -> rejected
-    bad = client.post(f"/api/sessions/{a}/analyze",
-                      json={"laps": [la, lb], "lapBSession": bra})
-    assert bad.status_code == 400 and "same track" in bad.get_json()["error"]
+    # a different track is now allowed too -> still renders a chart
+    lbra = first_complete(bra)
+    other = client.post(f"/api/sessions/{a}/analyze",
+                        json={"laps": [la, lbra], "lapBSession": bra})
+    assert other.status_code == 200 and "net_delta" in other.get_json()
+
+
+def test_session_delete(tmp_path, monkeypatch):
+    """A session's CSV and sidecars can be deleted; unknown names 404."""
+    monkeypatch.setenv("WORKSPACE_SESSIONS_DIR", str(tmp_path))
+    port = _free_udp_port()
+    rec = Recorder(tmp_path)
+    rec.start(port=port, track="ae-2009", year=2025)
+    f1_sim.simulate(dest=("127.0.0.1", port), laps=3, hz=240, warmup=0.3)
+    time.sleep(0.3)
+    rec.stop()
+    name = next(tmp_path.glob("f1_session_*.csv")).name
+
+    from workspace.web.app import create_app
+    client = create_app().test_client()
+    assert client.post(f"/api/sessions/{name}/name", json={"name": "X"}).status_code == 200
+
+    r = client.post(f"/api/sessions/{name}/delete")
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    assert not list(tmp_path.glob("f1_session_*"))          # csv + sidecars gone
+    assert client.get("/api/sessions").get_json() == []
+    assert client.post("/api/sessions/nope.csv/delete").status_code == 404
