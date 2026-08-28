@@ -53,10 +53,15 @@ SAUDI_FRAC = {1: 0.0667, 2: 0.075, 3: 0.1042, 4: 0.1542, 5: 0.1708, 6: 0.2,
               18: 0.5292, 19: 0.5708, 20: 0.6042, 21: 0.6458, 22: 0.6875,
               23: 0.7042, 24: 0.7208, 25: 0.7708, 26: 0.8375,
               27: 0.8917}   # Jeddah (rough; recalibrate from laps)
+MIAMI_FRAC = {1: 0.0833, 2: 0.1, 3: 0.1208, 4: 0.225, 5: 0.25, 6: 0.275,
+              7: 0.3167, 8: 0.3333, 9: 0.4125, 10: 0.4833, 11: 0.5875, 12: 0.6125,
+              13: 0.6417, 14: 0.6542, 15: 0.6667, 16: 0.6792, 17: 0.9167,
+              18: 0.9417, 19: 0.9792}   # Miami (rough; recalibrate from laps)
 CORNER_FRAC_BY_TRACK = {"br-1940": CORNER_FRAC, "ae-2009": YAS_FRAC,
                         "es-1991": BARCA_FRAC, "au-1953": MELB_FRAC,
                         "cn-2004": SHANGHAI_FRAC, "jp-1962": SUZUKA_FRAC,
-                        "bh-2002": BAHRAIN_FRAC, "sa-2021": SAUDI_FRAC}
+                        "bh-2002": BAHRAIN_FRAC, "sa-2021": SAUDI_FRAC,
+                        "us-2022": MIAMI_FRAC}
 
 
 def corners_for(track):
