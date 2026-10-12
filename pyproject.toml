@@ -23,6 +23,7 @@ f1-logger = "workspace.f1_logger:main"
 f1-analyze = "workspace.f1_analyze:main"
 f1-sim = "workspace.f1_sim:main"
 f1-web = "workspace.web.app:main"
+f1-map = "workspace.circuit_map:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -33,6 +34,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "workspace.web" = ["templates/*.html"]
+"workspace" = ["circuits/*.json", "circuits/*.md"]
 
 [tool.ruff]
 line-length = 100

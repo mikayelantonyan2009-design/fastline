@@ -1,0 +1,33 @@
+{
+  "_help": "Copy this file to <id>.json and fill it in. See README.md for the full spec. The renderer discovers files automatically; this TEMPLATE is ignored by listings.",
+  "id": "xx-0000",
+  "name": "Circuit Name",
+  "country": "Country",
+  "flag": "🏁",
+  "length_m": 5000,
+  "turns": 10,
+  "centerline": [
+    [0, 0],
+    [10, 2],
+    [20, 8],
+    [24, 18],
+    [20, 28],
+    [10, 34],
+    [0, 32],
+    [-4, 20],
+    [-2, 8]
+  ],
+  "labels": {
+    "start_finish": 0,
+    "corners": [
+      { "n": 1, "index": 2 },
+      { "n": 2, "index": 4 },
+      { "n": 3, "index": 7 }
+    ],
+    "sectors": { "sector1_end": 3, "sector2_end": 6 }
+  },
+  "overlays": {
+    "speed_trap": 5,
+    "drs_detection": [1]
+  }
+}

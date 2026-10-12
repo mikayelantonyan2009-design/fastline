@@ -216,7 +216,9 @@ def main():
         record_session(Path.cwd(), stop)
     except KeyboardInterrupt:
         stop.set()
-        print("\nStopped. Run f1-analyze on the CSV.")
+        print("\nStopped. Run f1-analyze on the CSV, or draw the lap on a circuit "
+              "map with:\n  f1-map <circuit-id> --csv <that CSV> --channel speed"
+              "\n  (f1-map --list shows the available circuits)")
 
 
 if __name__ == "__main__":
