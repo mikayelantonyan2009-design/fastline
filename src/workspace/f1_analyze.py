@@ -66,12 +66,25 @@ MADRING_FRAC = {1: 0.0875, 2: 0.1, 3: 0.1208, 4: 0.2208, 5: 0.2833, 6: 0.2917,
                 13: 0.5958, 14: 0.65, 15: 0.6958, 16: 0.7292, 17: 0.7417, 18: 0.7875,
                 19: 0.8208, 20: 0.8875, 21: 0.9167,
                 22: 0.9708}   # Madring (rough; recalibrate from laps)
+MONACO_FRAC = {1: 0.0793, 2: 0.2005, 3: 0.2506, 4: 0.2881, 5: 0.359, 6: 0.4332,
+               7: 0.4374, 8: 0.4456, 9: 0.5291, 10: 0.6377, 11: 0.6502, 12: 0.7252,
+               13: 0.7794, 14: 0.7877, 15: 0.8253, 16: 0.8293, 17: 0.8626,
+               18: 0.8917, 19: 0.9166}   # Monaco (bacinger/f1-circuits GPS; recalibrate from laps)
+AUSTRIA_FRAC = {1: 0.0773, 2: 0.2274, 3: 0.291, 4: 0.4817, 5: 0.5226, 6: 0.6044,
+                7: 0.6726, 8: 0.718, 9: 0.8454,
+                10: 0.8954}   # Red Bull Ring (bacinger/f1-circuits GPS; recalibrate from laps)
+SILVERSTONE_FRAC = {1: 0.0834, 2: 0.1168, 3: 0.1502, 4: 0.1874, 5: 0.2289,
+                    6: 0.3416, 7: 0.3831, 8: 0.4414, 9: 0.5291, 10: 0.6208,
+                    11: 0.6417, 12: 0.6667, 13: 0.6917, 14: 0.7209, 15: 0.8711,
+                    16: 0.9502, 17: 0.9625,
+                    18: 0.9917}   # Silverstone (bacinger/f1-circuits GPS; recalibrate from laps)
 CORNER_FRAC_BY_TRACK = {"br-1940": CORNER_FRAC, "ae-2009": YAS_FRAC,
                         "es-1991": BARCA_FRAC, "au-1953": MELB_FRAC,
                         "cn-2004": SHANGHAI_FRAC, "jp-1962": SUZUKA_FRAC,
                         "bh-2002": BAHRAIN_FRAC, "sa-2021": SAUDI_FRAC,
                         "us-2022": MIAMI_FRAC, "it-1953": IMOLA_FRAC,
-                        "es-2026": MADRING_FRAC}
+                        "es-2026": MADRING_FRAC, "mc-1929": MONACO_FRAC,
+                        "at-1969": AUSTRIA_FRAC, "gb-1948": SILVERSTONE_FRAC}
 
 
 def corners_for(track):
